@@ -93,8 +93,12 @@ bool RuleInst::alreadyRewritten(TheoryRewriteRules & re) const{
   for(std::vector<Node>::const_iterator
         iter = rule->to_remove.begin();
       iter != rule->to_remove.end(); ++iter){
-    if (substNode(re,*iter,cache).getAttribute(rewrittenNodeAttribute))
+    if (substNode(re,*iter,cache).getAttribute(rewrittenNodeAttribute)){
+      Debug("rewriterules::matching")
+        << "AlreadyRewritten term " << *iter
+        << " in instantiated rule" << *this << std::endl;
       return true;
+    }
   };
   return false;
 }

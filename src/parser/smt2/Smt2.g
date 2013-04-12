@@ -534,6 +534,7 @@ rewriterulesCommand[CVC4::Command*& cmd]
     LPAREN_TOK (termList[guards,expr])? RPAREN_TOK
     term[head, expr2] term[body, expr2]
     {
+      PARSER_STATE->popScope();
       args.clear();
       args.push_back(head);
       args.push_back(body);
@@ -576,6 +577,7 @@ rewriterulesCommand[CVC4::Command*& cmd]
     LPAREN_TOK (termList[heads,expr])? RPAREN_TOK
     term[body, expr2]
     {
+      PARSER_STATE->popScope();
       args.clear();
       /* heads */
       switch( heads.size() ){
