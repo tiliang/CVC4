@@ -554,6 +554,12 @@ public:
   /** Get the constituent types of a symbolic expression type */
   std::vector<TypeNode> getSExprTypes() const;
 
+  /** Is this a string type */
+  bool isString() const;
+
+  /** Is this a regexp type */
+  bool isRegExp() const;
+
   /** Is this a bit-vector type */
   bool isBitVector() const;
 
@@ -928,6 +934,20 @@ inline bool TypeNode::isSubrange() const {
   return getKind() == kind::SUBRANGE_TYPE ||
     ( isPredicateSubtype() && getSubtypeParentType().isSubrange() );
 }
+
+
+/** Is this a string type */
+inline bool TypeNode::isString() const {
+  return getKind() == kind::STRING_TYPE ||
+    ( isPredicateSubtype() && getSubtypeParentType().isString() );
+}
+
+/** Is this a regexp type */
+inline bool TypeNode::isRegExp() const {
+  return getKind() == kind::REGEXP_TYPE ||
+    ( isPredicateSubtype() && getSubtypeParentType().isRegExp() );
+}
+
 
 /** Is this a bit-vector type */
 inline bool TypeNode::isBitVector() const {

@@ -759,6 +759,12 @@ public:
    */
   inline TypeNode mkSExprType(const std::vector<TypeNode>& types);
 
+  /** Make the type of string */
+  inline TypeNode mkStringType();
+
+  /** Make the type of RegExp */
+  inline TypeNode mkRegExpType();
+
   /** Make the type of bitvectors of size <code>size</code> */
   inline TypeNode mkBitVectorType(unsigned size);
 
@@ -1107,6 +1113,14 @@ inline TypeNode NodeManager::mkSExprType(const std::vector<TypeNode>& types) {
     typeNodes.push_back(types[i]);
   }
   return mkTypeNode(kind::SEXPR_TYPE, typeNodes);
+}
+
+inline TypeNode mkStringType() {
+  return TypeNode(mkTypeConst<String>());
+}
+
+inline TypeNode mkRegExpType() {
+  return TypeNode(mkTypeConst<RegExp>());
 }
 
 inline TypeNode NodeManager::mkBitVectorType(unsigned size) {
