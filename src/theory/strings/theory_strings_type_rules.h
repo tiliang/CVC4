@@ -27,7 +27,7 @@ class StringConstantTypeRule {
 public:
   inline static TypeNode computeType(NodeManager* nodeManager, TNode n, bool check)
       throw (TypeCheckingExceptionPrivate, AssertionException) {
-    return nodeManager->mkStringType();
+    return nodeManager->stringType();
   }
 };
 
@@ -43,7 +43,7 @@ public:
        if (!t.isString()) {
          throw TypeCheckingExceptionPrivate(n, "expecting string terms");
        }
-    return nodeManager->mkStringType();
+    return nodeManager->stringType();
   }
 };
 
@@ -51,7 +51,7 @@ class RegExpConstantTypeRule {
 public:
   inline static TypeNode computeType(NodeManager* nodeManager, TNode n, bool check)
       throw (TypeCheckingExceptionPrivate, AssertionException) {
-    return nodeManager->mkRegExpType();
+    return nodeManager->regexpType();
   }
 };
 
@@ -66,7 +66,7 @@ public:
        if (!t.isRegExp()) {
          throw TypeCheckingExceptionPrivate(n, "expecting regexp terms");
        }
-    return nodeManager->mkRegExpType();
+    return nodeManager->regexpType();
   }
 };
 
@@ -81,7 +81,7 @@ public:
        if (!t.isRegExp()) {
          throw TypeCheckingExceptionPrivate(n, "expecting regexp terms");
        }
-    return nodeManager->mkRegExpType();
+    return nodeManager->regexpType();
   }
 };
 
@@ -96,7 +96,7 @@ public:
        if (!t.isRegExp()) {
          throw TypeCheckingExceptionPrivate(n, "expecting regexp terms");
        }
-    return nodeManager->mkRegExpType();
+    return nodeManager->regexpType();
   }
 };
 
@@ -114,7 +114,7 @@ public:
       throw TypeCheckingExceptionPrivate(n, "too many regexp");
     }
 
-    return nodeManager->mkRegExpType();
+    return nodeManager->regexpType();
   }
 };
 
@@ -132,7 +132,7 @@ public:
       throw TypeCheckingExceptionPrivate(n, "too many regexp");
     }
 
-    return nodeManager->mkRegExpType();
+    return nodeManager->regexpType();
   }
 };
 
@@ -150,7 +150,7 @@ public:
       throw TypeCheckingExceptionPrivate(n, "too many regexp");
     }
 
-    return nodeManager->mkRegExpType();
+    return nodeManager->regexpType();
   }
 };
 
@@ -168,7 +168,7 @@ public:
       throw TypeCheckingExceptionPrivate(n, "too many terms");
     }
 
-    return nodeManager->mkRegExpType();
+    return nodeManager->regexpType();
   }
 };
 

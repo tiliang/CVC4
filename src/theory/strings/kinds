@@ -25,58 +25,45 @@ operator STRING_IN_REGEXP 2 "membership"
 constant CONST_STRING \
     ::CVC4::String \
     ::CVC4::StringHashFunction \
-    "util/hash.h" \
+    "util/string.h" \
     "a string of characters"
 
 constant CONST_REGEXP \
     ::CVC4::RegExp \
     ::CVC4::RegExpHashFunction \
-    "util/hash.h" \
+    "util/regexp.h" \
     "a regular expression"
 
 typerule CONST_STRING ::CVC4::theory::strings::StringConstantTypeRule
 typerule CONST_REGEXP ::CVC4::theory::strings::RegExpConstantTypeRule
 
 # equal equal / less than / output
-/*
-sort STRING_TYPE \
-    Cardinality::INTEGERS \
-    well-founded \
-        "NodeManager::currentNM()->mkConst(::CVC4::string())" \
-        "string" \
-    "String type"
-
-sort REGEXP_TYPE \
-    Cardinality::INTEGERS \
-    well-founded \
-        "NodeManager::currentNM()->mkConst(::CVC4::string())" \
-        "regexp" \
-    "Regular Expression type"
-
 operator STRING_TO_REGEXP 1 "convert string to regexp"
-//operator REGEXP_CONCAT 2: "regexp concat"
-//operator REGEXP_OR 2: "regexp or"
-//operator REGEXP_INTER 2: "regexp intersection"
-//operator REGEXP_STAR 1 "regexp *"
-//operator REGEXP_PLUS 1 "regexp +"
-//operator REGEXP_OPT 1 "regexp ?"
-constant REGEXP_EMPTY \
-	::CVC4::RegExp \
-	::CVC4::RegExpHashFunction \
-	"util/string.h" \
-	"a regexp contains nothing"
+operator REGEXP_CONCAT 2: "regexp concat"
+operator REGEXP_OR 2: "regexp or"
+operator REGEXP_INTER 2: "regexp intersection"
+operator REGEXP_STAR 1 "regexp *"
+operator REGEXP_PLUS 1 "regexp +"
+operator REGEXP_OPT 1 "regexp ?"
 
-constant REGEXP_ALL \
-	::CVC4::RegExp \
-	::CVC4::RegExpHashFunction \
-	"util/string.h" \
-	"a regexp contains all strings"
+#constant REGEXP_EMPTY \
+#	::CVC4::RegExp \
+#	::CVC4::RegExpHashFunction \
+#	"util/string.h" \
+#	"a regexp contains nothing"
 
-constant REGEXP_SIGMA \
-	::CVC4::RegExp \
-	::CVC4::RegExpHashFunction \
-	"util/string.h" \
-	"a regexp contains an arbitrary charactor"
+#constant REGEXP_ALL \
+#	::CVC4::RegExp \
+#	::CVC4::RegExpHashFunction \
+#	"util/string.h" \
+#	"a regexp contains all strings"
+
+#constant REGEXP_SIGMA \
+#	::CVC4::RegExp \
+#	::CVC4::RegExpHashFunction \
+#	"util/string.h" \
+#	"a regexp contains an arbitrary charactor"
+
 typerule REGEXP_CONCAT ::CVC4::theory::strings::RegExpConcatTypeRule
 typerule REGEXP_OR ::CVC4::theory::strings::RegExpOrTypeRule
 typerule REGEXP_INTER ::CVC4::theory::strings::RegExpInterTypeRule
@@ -85,7 +72,6 @@ typerule REGEXP_PLUS ::CVC4::theory::strings::RegExpPlusTypeRule
 typerule REGEXP_OPT ::CVC4::theory::strings::RegExpOptTypeRule
 
 typerule STRING_TO_REGEXP ::CVC4::theory::strings::StringToRegExpTypeRule
-*/
 
 typerule STRING_CONCAT ::CVC4::theory::strings::StringConcatTypeRule
 

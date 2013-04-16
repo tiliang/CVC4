@@ -680,6 +680,9 @@ public:
   /** Get the (singleton) type for strings. */
   inline TypeNode stringType();
 
+  /** Get the (singleton) type for RegExp. */
+  inline TypeNode regexpType();
+
   /** Get the bound var list type. */
   inline TypeNode boundVarListType();
 
@@ -758,12 +761,6 @@ public:
    * @returns the symbolic expression type (types[0], ..., types[n])
    */
   inline TypeNode mkSExprType(const std::vector<TypeNode>& types);
-
-  /** Make the type of string */
-  inline TypeNode mkStringType();
-
-  /** Make the type of RegExp */
-  inline TypeNode mkRegExpType();
 
   /** Make the type of bitvectors of size <code>size</code> */
   inline TypeNode mkBitVectorType(unsigned size);
@@ -1032,6 +1029,11 @@ inline TypeNode NodeManager::stringType() {
   return TypeNode(mkTypeConst<TypeConstant>(STRING_TYPE));
 }
 
+/** Get the (singleton) type for regexps. */
+inline TypeNode NodeManager::regexpType() {
+  return TypeNode(mkTypeConst<TypeConstant>(REGEXP_TYPE));
+}
+
 /** Get the bound var list type. */
 inline TypeNode NodeManager::boundVarListType() {
   return TypeNode(mkTypeConst<TypeConstant>(BOUND_VAR_LIST_TYPE));
@@ -1113,14 +1115,6 @@ inline TypeNode NodeManager::mkSExprType(const std::vector<TypeNode>& types) {
     typeNodes.push_back(types[i]);
   }
   return mkTypeNode(kind::SEXPR_TYPE, typeNodes);
-}
-
-inline TypeNode mkStringType() {
-  return TypeNode(mkTypeConst<String>());
-}
-
-inline TypeNode mkRegExpType() {
-  return TypeNode(mkTypeConst<RegExp>());
 }
 
 inline TypeNode NodeManager::mkBitVectorType(unsigned size) {

@@ -534,7 +534,6 @@ rewriterulesCommand[CVC4::Command*& cmd]
     LPAREN_TOK (termList[guards,expr])? RPAREN_TOK
     term[head, expr2] term[body, expr2]
     {
-      PARSER_STATE->popScope();
       args.clear();
       args.push_back(head);
       args.push_back(body);
@@ -577,7 +576,6 @@ rewriterulesCommand[CVC4::Command*& cmd]
     LPAREN_TOK (termList[heads,expr])? RPAREN_TOK
     term[body, expr2]
     {
-      PARSER_STATE->popScope();
       args.clear();
       /* heads */
       switch( heads.size() ){
@@ -922,7 +920,7 @@ term[CVC4::Expr& expr, CVC4::Expr& expr2]
       expr = MK_CONST( BitVector(binString, 2) ); }
 
   | str[s]
-    { expr = MK_CONST( s ); }
+    { expr = MK_CONST( ::CVC4::String(s) ); }
 
     // NOTE: Theory constants go here
   ;
@@ -1114,6 +1112,16 @@ builtinOp[CVC4::Kind& kind]
   | BVSLE_TOK     { $kind = CVC4::kind::BITVECTOR_SLE; }
   | BVSGT_TOK     { $kind = CVC4::kind::BITVECTOR_SGT; }
   | BVSGE_TOK     { $kind = CVC4::kind::BITVECTOR_SGE; }
+
+  | STRCON_TOK     { $kind = CVC4::kind::STRING_CONCAT; }
+  | STRINRE_TOK    { $kind = CVC4::kind::STRING_IN_REGEXP; }
+  | STRTORE_TOK    { $kind = CVC4::kind::STRING_TO_REGEXP; }
+  | RECON_TOK      { $kind = CVC4::kind::REGEXP_CONCAT; }
+  | REOR_TOK       { $kind = CVC4::kind::REGEXP_OR; }
+  | REINTER_TOK    { $kind = CVC4::kind::REGEXP_INTER; }
+  | RESTAR_TOK     { $kind = CVC4::kind::REGEXP_STAR; }
+  | REPLUS_TOK     { $kind = CVC4::kind::REGEXP_PLUS; }
+  | REOPT_TOK      { $kind = CVC4::kind::REGEXP_OPT; }
 
   // NOTE: Theory operators go here
   ;
@@ -1459,6 +1467,17 @@ BVSLT_TOK : 'bvslt';
 BVSLE_TOK : 'bvsle';
 BVSGT_TOK : 'bvsgt';
 BVSGE_TOK : 'bvsge';
+
+//STRING
+STRCON_TOK : 'str.++';
+STRINRE_TOK : 'str.in.re';
+STRTORE_TOK : 'str.to.re';
+RECON_TOK : 're.++';
+REOR_TOK : 're.or';
+REINTER_TOK : 're.inter';
+RESTAR_TOK : 're.*';
+REPLUS_TOK : 're.+';
+REOPT_TOK : 're.opt';
 
 /**
  * A sequence of printable ASCII characters (except backslash) that starts
