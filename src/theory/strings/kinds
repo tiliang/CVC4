@@ -24,7 +24,7 @@ operator STRING_IN_REGEXP 2 "membership"
 
 constant CONST_STRING \
     ::CVC4::String \
-    ::CVC4::StringHashFunction \
+    ::CVC4::strings::StringHashFunction \
     "util/string.h" \
     "a string of characters"
 
