@@ -24,8 +24,82 @@
 #include <string>
 //#include "util/exception.h"
 //#include "util/integer.h"
+#include "util/hash.h"
 
 namespace CVC4 {
+
+class CVC4_PUBLIC String {
+
+private:
+  std::string d_str;
+ 
+public:  
+  String() {}
+
+  String(const std::string s)
+	  : d_str(s) {}
+
+  ~String() {}
+
+  String& operator =(const String& y) {
+    if(this != &y) d_str = y.d_str;
+    return *this;
+  }
+
+  bool operator ==(const String& y) const {
+    return d_str == y.d_str ;
+  }
+
+  bool operator !=(const String& y) const {
+    return d_str != y.d_str ;
+  }
+
+  String concat (const String& other) const {
+    return String(d_str + other.d_str);
+  }
+
+  bool operator <(const String& y) const {
+    return d_str < y.d_str; 
+  }
+
+  bool operator >(const String& y) const {
+    return d_str > y.d_str ;
+  }
+
+  bool operator <=(const String& y) const {
+    return d_str <= y.d_str; 
+  }
+  
+  bool operator >=(const String& y) const {
+    return d_str >= y.d_str ;
+  }
+  
+  /*
+    Convenience functions
+   */
+  std::string toString() const {
+    return d_str;
+  }
+
+  unsigned getSize() const {
+    return d_str.size();
+  }
+};/* class String */
+
+namespace strings {
+
+struct StringHashFunction {
+  size_t operator()(const ::CVC4::String& s) const {
+    return __gnu_cxx::hash<const char*>()(s.toString().c_str());
+  }
+};/* struct StringHashFunction */
+
+}
+
+inline std::ostream& operator <<(std::ostream& os, const String& s) CVC4_PUBLIC;
+inline std::ostream& operator <<(std::ostream& os, const String& s) {
+  return os << s.toString();
+}
 
 class CVC4_PUBLIC RegExp {
 

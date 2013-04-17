@@ -14,6 +14,20 @@ operator STRING_CONCAT 2: "string concat"
 
 operator STRING_IN_REGEXP 2 "membership"
 
+sort STRING_TYPE \
+    Cardinality::INTEGERS \
+    well-founded \
+        "NodeManager::currentNM()->mkConst(::CVC4::String())" \
+        "util/regexp.h" \
+    "String type" 
+
+sort REGEXP_TYPE \
+    Cardinality::INTEGERS \
+    well-founded \
+        "NodeManager::currentNM()->mkConst(::CVC4::RegExp())" \
+        "util/regexp.h" \
+    "RegExp type" 
+
 #enumerator STRING_TYPE \
 #    "::CVC4::theory::strings::StringEnumerator" \
 #    "theory/strings/type_enumerator.h"
@@ -25,7 +39,7 @@ operator STRING_IN_REGEXP 2 "membership"
 constant CONST_STRING \
     ::CVC4::String \
     ::CVC4::strings::StringHashFunction \
-    "util/string.h" \
+    "util/regexp.h" \
     "a string of characters"
 
 constant CONST_REGEXP \

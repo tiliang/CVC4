@@ -43,6 +43,7 @@ public:
        if (!t.isString()) {
          throw TypeCheckingExceptionPrivate(n, "expecting string terms");
        }
+	}
     return nodeManager->stringType();
   }
 };
@@ -66,6 +67,7 @@ public:
        if (!t.isRegExp()) {
          throw TypeCheckingExceptionPrivate(n, "expecting regexp terms");
        }
+	}
     return nodeManager->regexpType();
   }
 };
@@ -81,6 +83,7 @@ public:
        if (!t.isRegExp()) {
          throw TypeCheckingExceptionPrivate(n, "expecting regexp terms");
        }
+	}
     return nodeManager->regexpType();
   }
 };
@@ -96,6 +99,7 @@ public:
        if (!t.isRegExp()) {
          throw TypeCheckingExceptionPrivate(n, "expecting regexp terms");
        }
+	}
     return nodeManager->regexpType();
   }
 };
