@@ -1,8 +1,8 @@
 /*********************                                                        */
 /*! \file regexp.h
  ** \verbatim
- ** Original author: tiliang
- ** Major contributors: tiliang
+ ** Original author: Tianyi Liang
+ ** Major contributors: none
  ** Minor contributors (to current version): none
  ** This file is part of the CVC4 prototype.
  ** Copyright (c) 2009-2012  New York University and The University of Iowa

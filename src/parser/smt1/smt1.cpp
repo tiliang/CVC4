@@ -3,7 +3,7 @@
  ** \verbatim
  ** Original author: Morgan Deters
  ** Major contributors: Christopher L. Conway
- ** Minor contributors (to current version): Tim King, Dejan Jovanovic, Clark Barrett
+ ** Minor contributors (to current version): Tim King, Dejan Jovanovic, Clark Barrett, Tianyi Liang
  ** This file is part of the CVC4 project.
  ** Copyright (c) 2009-2013  New York University and The University of Iowa
  ** See the file COPYING in the top-level source directory for licensing
@@ -39,6 +39,7 @@ std::hash_map<const std::string, Smt1::Logic, CVC4::StringHashFunction> Smt1::ne
   logicMap["QF_NIA"] = QF_NIA;
   logicMap["QF_NRA"] = QF_NRA;
   logicMap["QF_RDL"] = QF_RDL;
+  logicMap["QF_S"] = QF_S;
   logicMap["QF_SAT"] = QF_SAT;
   logicMap["QF_UF"] = QF_UF;
   logicMap["QF_UFIDL"] = QF_UFIDL;

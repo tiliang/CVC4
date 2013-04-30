@@ -13,6 +13,11 @@ properties check
 # Theory content goes here.
 
 # constants...
+constant REWRITE_PRIORITY \
+   ::CVC4::RewritePriority \
+   ::CVC4::RewritePriorityHashFunction \
+   "util/rewrite_priority.h" \
+   "a priority for a rewrite rule"
 
 # types...
 sort RRHB_TYPE \
