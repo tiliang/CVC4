@@ -23,7 +23,7 @@
 #include <vector>
 #include <sstream>
 #include "expr/node_manager.h"
-
+#include "theory/decision_attributes.h"
 
 
 namespace CVC4 {
@@ -84,6 +84,7 @@ inline Node mkSortedNode(Kind kind, std::vector<Node>& children) {
 
 
 inline Node mkNode(Kind kind, std::vector<Node>& children) {
+  Assert (children.size() > 0); 
   if (children.size() == 1) {
     return children[0]; 
   }
@@ -132,6 +133,12 @@ inline Node mkXor(TNode node1, TNode node2) {
   return NodeManager::currentNM()->mkNode(kind::XOR, node1, node2);
 }
 
+
+inline Node mkSignExtend(TNode node, unsigned ammount) {
+  NodeManager* nm = NodeManager::currentNM(); 
+  Node signExtendOp = nm->mkConst<BitVectorSignExtend>(BitVectorSignExtend(ammount));
+  return nm->mkNode(signExtendOp, node); 
+}
 
 inline Node mkExtract(TNode node, unsigned high, unsigned low) {
   Node extractOp = NodeManager::currentNM()->mkConst<BitVectorExtract>(BitVectorExtract(high, low));
@@ -492,6 +499,26 @@ inline T gcd(T a, T b) {
   return a;
 }
 
+
+typedef __gnu_cxx::hash_set<TNode, TNodeHashFunction> TNodeSet;
+
+inline uint64_t numNodesAux(TNode node, TNodeSet& seen) {
+  if (seen.find(node) != seen.end())
+    return 0;
+
+  uint64_t size = 1;
+  for (unsigned i = 0; i < node.getNumChildren(); ++i) {
+    size += numNodesAux(node[i], seen);
+  }
+  seen.insert(node);
+  return size;
+}
+
+inline uint64_t numNodes(TNode node) {
+  TNodeSet seen;
+  uint64_t size = numNodesAux(node, seen);
+  return size;
+}
 
 }
 }

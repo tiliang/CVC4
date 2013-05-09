@@ -235,7 +235,7 @@ class SmtEnginePrivate : public NodeManagerListener {
   unsigned d_realAssertionsEnd;
 
   /** The converter for Boolean terms -> BITVECTOR(1). */
-  BooleanTermConverter d_booleanTermConverter;
+  BooleanTermConverter* d_booleanTermConverter;
 
   /** A circuit propagator for non-clausal propositional deduction */
   booleans::CircuitPropagator d_propagator;
@@ -292,13 +292,12 @@ class SmtEnginePrivate : public NodeManagerListener {
    */
   Node d_modZero;
 
+public:
   /**
    * Map from skolem variables to index in d_assertionsToCheck containing
    * corresponding introduced Boolean ite
    */
   IteSkolemMap d_iteSkolemMap;
-
-public:
 
   /** Instance of the ITE remover */
   RemoveITE d_iteRemover;
@@ -349,7 +348,9 @@ private:
    */
   bool checkForBadSkolems(TNode n, TNode skolem, hash_map<Node, bool, NodeHashFunction>& cache);
 
-
+  // Lift bit-vectors of size 1 to booleans
+  void bvToBool(); 
+  
   // Simplify ITE structure
   void simpITE();
 
@@ -388,7 +389,7 @@ public:
     d_assertionsToPreprocess(),
     d_nonClausalLearnedLiterals(),
     d_realAssertionsEnd(0),
-    d_booleanTermConverter(d_smt),
+    d_booleanTermConverter(NULL),
     d_propagator(d_nonClausalLearnedLiterals, true, true),
     d_propagatorNeedsFinish(false),
     d_assertionsToCheck(),
@@ -409,6 +410,10 @@ public:
     if(d_propagatorNeedsFinish) {
       d_propagator.finish();
       d_propagatorNeedsFinish = false;
+    }
+    if(d_booleanTermConverter != NULL) {
+      delete d_booleanTermConverter;
+      d_booleanTermConverter = NULL;
     }
     d_smt.d_nodeManager->unsubscribeEvents(this);
   }
@@ -603,12 +608,9 @@ SmtEngine::SmtEngine(ExprManager* em) throw() :
   d_theoryEngine = new TheoryEngine(d_context, d_userContext, d_private->d_iteRemover, const_cast<const LogicInfo&>(d_logic));
 
   // Add the theories
-#ifdef CVC4_FOR_EACH_THEORY_STATEMENT
-#undef CVC4_FOR_EACH_THEORY_STATEMENT
-#endif
-#define CVC4_FOR_EACH_THEORY_STATEMENT(THEORY) \
-    d_theoryEngine->addTheory<TheoryTraits<THEORY>::theory_class>(THEORY);
-  CVC4_FOR_EACH_THEORY;
+  for(TheoryId id = theory::THEORY_FIRST; id < theory::THEORY_LAST; ++id) {
+    TheoryConstructor::addTheory(d_theoryEngine, id);
+  }
 
   // global push/pop around everything, to ensure proper destruction
   // of context-dependent data structures
@@ -747,8 +749,8 @@ SmtEngine::~SmtEngine() throw() {
 
     // global push/pop around everything, to ensure proper destruction
     // of context-dependent data structures
-    d_context->pop();
-    d_userContext->pop();
+    d_context->popto(0);
+    d_userContext->popto(0);
 
     if(d_assignments != NULL) {
       d_assignments->deleteSelf();
@@ -769,17 +771,17 @@ SmtEngine::~SmtEngine() throw() {
 
     d_definedFunctions->deleteSelf();
 
-    delete d_stats;
-
-    delete d_private;
 
     delete d_theoryEngine;
     delete d_propEngine;
     delete d_decisionEngine;
 
-    delete d_userContext;
-
+    delete d_stats;
     delete d_statisticsRegistry;
+
+    delete d_private;
+
+    delete d_userContext;
 
   } catch(Exception& e) {
     Warning() << "CVC4 threw an exception during cleanup." << endl
@@ -846,11 +848,10 @@ void SmtEngine::setLogicInternal() throw() {
     Trace("smt") << "setting uf symmetry breaker to " << qf_uf << endl;
     options::ufSymmetryBreaker.set(qf_uf);
   }
-  // by default, nonclausal simplification is off for QF_SAT and for quantifiers
+  // by default, nonclausal simplification is off for QF_SAT
   if(! options::simplificationMode.wasSetByUser()) {
     bool qf_sat = d_logic.isPure(THEORY_BOOL) && !d_logic.isQuantified();
-    bool quantifiers = d_logic.isQuantified();
-    Trace("smt") << "setting simplification mode to <" << d_logic.getLogicString() << "> " << (!qf_sat && !quantifiers) << endl;
+    Trace("smt") << "setting simplification mode to <" << d_logic.getLogicString() << "> " << (!qf_sat) << endl;
     //simplification=none works better for SMT LIB benchmarks with quantifiers, not others
     //options::simplificationMode.set(qf_sat || quantifiers ? SIMPLIFICATION_MODE_NONE : SIMPLIFICATION_MODE_BATCH);
     options::simplificationMode.set(qf_sat ? SIMPLIFICATION_MODE_NONE : SIMPLIFICATION_MODE_BATCH);
@@ -1017,9 +1018,16 @@ void SmtEngine::setLogicInternal() throw() {
 
   //for finite model finding
   if( ! options::instWhenMode.wasSetByUser()){
+    //instantiate only on last call
     if( options::fmfInstEngine() ){
       Trace("smt") << "setting inst when mode to LAST_CALL" << endl;
       options::instWhenMode.set( INST_WHEN_LAST_CALL );
+    }
+  }
+  if ( ! options::fmfInstGen.wasSetByUser()) {
+    //if full model checking is on, disable inst-gen techniques
+    if( options::fmfFullModelCheck() ){
+      options::fmfInstGen.set( false );
     }
   }
 
@@ -1214,7 +1222,8 @@ void SmtEngine::defineFunction(Expr func,
     stringstream ss;
     ss << Expr::setlanguage(Expr::setlanguage::getLanguage(Dump.getStream()))
        << func;
-    Dump("declarations") << DefineFunctionCommand(ss.str(), func, formals, formula);
+    DefineFunctionCommand c(ss.str(), func, formals, formula);
+    addToModelCommandAndDump(c, false, true, "declarations");
   }
   SmtScope smts(this);
 
@@ -1823,11 +1832,15 @@ bool SmtEnginePrivate::nonClausalSimplify() {
   }
 
   hash_set<TNode, TNodeHashFunction> s;
+  Trace("debugging") << "NonClausal simplify pre-preprocess\n"; 
   for (unsigned i = 0; i < d_assertionsToPreprocess.size(); ++ i) {
     Node assertion = d_assertionsToPreprocess[i];
     Node assertionNew = d_topLevelSubstitutions.apply(assertion);
+    Trace("debugging") << "assertion = " << assertion << endl;
+    Trace("debugging") << "assertionNew = " << assertionNew << endl; 
     if (assertion != assertionNew) {
       assertion = Rewriter::rewrite(assertionNew);
+      Trace("debugging") << "rewrite(assertion) = " << assertion << endl; 
     }
     Assert(Rewriter::rewrite(assertion) == assertion);
     for (;;) {
@@ -1836,8 +1849,11 @@ bool SmtEnginePrivate::nonClausalSimplify() {
         break;
       }
       ++d_smt.d_stats->d_numConstantProps;
+      Trace("debugging") << "assertionNew = " << assertionNew << endl; 
       assertion = Rewriter::rewrite(assertionNew);
+      Trace("debugging") << "assertionNew = " << assertionNew << endl; 
     }
+    Trace("debugging") << "\n"; 
     s.insert(assertion);
     d_assertionsToCheck.push_back(assertion);
     Trace("simplify") << "SmtEnginePrivate::nonClausalSimplify(): "
@@ -1924,6 +1940,15 @@ bool SmtEnginePrivate::nonClausalSimplify() {
   return true;
 }
 
+
+void SmtEnginePrivate::bvToBool() {
+  Trace("bv-to-bool") << "SmtEnginePrivate::bvToBool()" << endl;
+  std::vector<Node> new_assertions;
+  d_smt.d_theoryEngine->ppBvToBool(d_assertionsToCheck, new_assertions); 
+  for (unsigned i = 0; i < d_assertionsToCheck.size(); ++ i) {
+    d_assertionsToCheck[i] = Rewriter::rewrite(new_assertions[i]);
+  }
+}
 
 void SmtEnginePrivate::simpITE() {
   TimerStat::CodeTimer simpITETimer(d_smt.d_stats->d_simpITETime);
@@ -2514,6 +2539,21 @@ Result SmtEngine::check() {
   Trace("smt") << "SmtEngine::check(): processing assertions" << endl;
   d_private->processAssertions();
 
+  // Turn off stop only for QF_LRA
+  // TODO: Bring up in a meeting where to put this
+  if(options::decisionStopOnly() && !options::decisionMode.wasSetByUser() ){
+    if( // QF_LRA
+       (not d_logic.isQuantified() &&
+        d_logic.isPure(THEORY_ARITH) && d_logic.isLinear() && !d_logic.isDifferenceLogic() &&  !d_logic.areIntegersUsed()
+        )){
+      if(d_private->d_iteSkolemMap.empty()){
+        options::decisionStopOnly.set(false);
+        d_decisionEngine->clearStrategies();
+        Trace("smt") << "SmtEngine::check(): turning off stop only" << endl;
+      }
+    }
+  }
+
   unsigned long millis = 0;
   if(d_timeBudgetCumulative != 0) {
     millis = getTimeRemaining();
@@ -2665,8 +2705,14 @@ void SmtEnginePrivate::processAssertions() {
   {
     Chat() << "rewriting Boolean terms..." << endl;
     TimerStat::CodeTimer codeTimer(d_smt.d_stats->d_rewriteBooleanTermsTime);
+    if(d_booleanTermConverter == NULL) {
+      // This needs to be initialized _after_ the whole SMT framework is in place, subscribed
+      // to ExprManager notifications, etc.  Otherwise we might miss the "BooleanTerm" datatype
+      // definition, and not dump it properly.
+      d_booleanTermConverter = new BooleanTermConverter(d_smt);
+    }
     for(unsigned i = 0, i_end = d_assertionsToPreprocess.size(); i != i_end; ++i) {
-      Node n = d_booleanTermConverter.rewriteBooleanTerms(d_assertionsToPreprocess[i]);
+      Node n = d_booleanTermConverter->rewriteBooleanTerms(d_assertionsToPreprocess[i]);
       if(n != d_assertionsToPreprocess[i]) {
         switch(booleans::BooleanTermConversionMode mode = options::booleanTermConversionMode()) {
         case booleans::BOOLEAN_TERM_CONVERT_TO_BITVECTORS:
@@ -2772,6 +2818,17 @@ void SmtEnginePrivate::processAssertions() {
   }
   dumpAssertions("post-static-learning", d_assertionsToCheck);
 
+  // Lift bit-vectors of size 1 to bool 
+  if(options::bvToBool()) {
+    Chat() << "...doing bvToBool..." << endl;
+    bvToBool();
+  }
+
+  Trace("smt") << "POST bvToBool" << endl;
+  Debug("smt") << " d_assertionsToPreprocess: " << d_assertionsToPreprocess.size() << endl;
+  Debug("smt") << " d_assertionsToCheck     : " << d_assertionsToCheck.size() << endl;
+
+  
   dumpAssertions("pre-ite-removal", d_assertionsToCheck);
   {
     Chat() << "removing term ITEs..." << endl;

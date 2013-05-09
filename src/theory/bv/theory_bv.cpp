@@ -43,6 +43,7 @@ TheoryBV::TheoryBV(context::Context* c, context::UserContext* u, OutputChannel& 
     d_subtheories(),
     d_subtheoryMap(),
     d_statistics(),
+    d_lemmasAdded(c, false),
     d_conflict(c, false),
     d_literalsToPropagate(c),
     d_literalsToPropagateIndex(c, 0),
@@ -78,13 +79,15 @@ TheoryBV::Statistics::Statistics():
   d_solveSubstitutions("theory::bv::NumberOfSolveSubstitutions", 0),
   d_solveTimer("theory::bv::solveTimer"),
   d_numCallsToCheckFullEffort("theory::bv::NumberOfFullCheckCalls", 0),
-  d_numCallsToCheckStandardEffort("theory::bv::NumberOfStandardCheckCalls", 0)
+  d_numCallsToCheckStandardEffort("theory::bv::NumberOfStandardCheckCalls", 0),
+  d_weightComputationTimer("theory::bv::weightComputationTimer")
 {
   StatisticsRegistry::registerStat(&d_avgConflictSize);
   StatisticsRegistry::registerStat(&d_solveSubstitutions);
   StatisticsRegistry::registerStat(&d_solveTimer);
   StatisticsRegistry::registerStat(&d_numCallsToCheckFullEffort);
   StatisticsRegistry::registerStat(&d_numCallsToCheckStandardEffort);
+  StatisticsRegistry::registerStat(&d_weightComputationTimer);
 }
 
 TheoryBV::Statistics::~Statistics() {
@@ -93,6 +96,7 @@ TheoryBV::Statistics::~Statistics() {
   StatisticsRegistry::unregisterStat(&d_solveTimer);
   StatisticsRegistry::unregisterStat(&d_numCallsToCheckFullEffort);
   StatisticsRegistry::unregisterStat(&d_numCallsToCheckStandardEffort);
+  StatisticsRegistry::unregisterStat(&d_weightComputationTimer);
 }
 
 
@@ -122,6 +126,34 @@ void TheoryBV::sendConflict() {
   }
 }
 
+void TheoryBV::checkForLemma(TNode fact) {
+  if (fact.getKind() == kind::EQUAL) {
+    if (fact[0].getKind() == kind::BITVECTOR_UREM_TOTAL) {
+      TNode urem = fact[0];
+      TNode result = fact[1];
+      TNode divisor = urem[1]; 
+      Node result_ult_div = mkNode(kind::BITVECTOR_ULT, result, divisor);
+      Node divisor_eq_0 = mkNode(kind::EQUAL,
+                                 divisor,
+                                 mkConst(BitVector(getSize(divisor), 0u)));  
+      Node split = utils::mkNode(kind::OR, divisor_eq_0, mkNode(kind::NOT, fact), result_ult_div);
+      lemma(split);
+    }
+    if (fact[1].getKind() == kind::BITVECTOR_UREM_TOTAL) {
+      TNode urem = fact[1];
+      TNode result = fact[0];
+      TNode divisor = urem[1]; 
+      Node result_ult_div = mkNode(kind::BITVECTOR_ULT, result, divisor);
+      Node divisor_eq_0 = mkNode(kind::EQUAL,
+                                  divisor,
+                                  mkConst(BitVector(getSize(divisor), 0u)));  
+      Node split = utils::mkNode(kind::OR, divisor_eq_0, mkNode(kind::NOT, fact), result_ult_div);
+      lemma(split);
+    }
+  }
+}
+
+
 void TheoryBV::check(Effort e)
 {
   Debug("bitvector") << "TheoryBV::check(" << e << ")" << std::endl;
@@ -142,6 +174,7 @@ void TheoryBV::check(Effort e)
 
   while (!done()) {
     TNode fact = get().assertion;
+   	checkForLemma(fact); 
     for (unsigned i = 0; i < d_subtheories.size(); ++i) {
       d_subtheories[i]->assertFact(fact); 
     }
@@ -205,6 +238,7 @@ void TheoryBV::propagate(Effort e) {
     TNode literal = d_literalsToPropagate[d_literalsToPropagateIndex];
     // temporary fix for incremental bit-blasting 
     if (d_valuation.isSatLiteral(literal)) {
+      Debug("bitvector::propagate") << "TheoryBV:: propagating " << literal <<"\n";
       ok = d_out->propagate(literal);
     }
   }

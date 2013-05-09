@@ -72,12 +72,10 @@
 #include "context/cdqueue.h"
 
 #include "theory/arith/arithvar.h"
-#include "theory/arith/arithvar_node_map.h"
 #include "theory/arith/delta_rational.h"
-
 #include "theory/arith/congruence_manager.h"
-
 #include "theory/arith/constraint_forward.h"
+#include "theory/arith/callbacks.h"
 
 #include <vector>
 #include <list>
@@ -600,9 +598,13 @@ public:
   void impliedBy(Constraint a, Constraint b);
   void impliedBy(const std::vector<Constraint>& b);
 
+  Node makeImplication(const std::vector<Constraint>& b) const;
+  static Node makeConjunction(const std::vector<Constraint>& b);
 
   /** The node must have a proof already and be eligible for propagation! */
   void propagate();
+
+  bool satisfiedBy(const DeltaRational& dr) const;
 
 private:
   /**
@@ -619,11 +621,6 @@ private:
 
   void markAsTrue(Constraint a, Constraint b);
   void markAsTrue(const std::vector<Constraint>& b);
-
-public:
-
-
-private:
 
   void debugPrint() const;
 
@@ -776,20 +773,18 @@ private:
   static bool emptyDatabase(const std::vector<PerVariableDatabase>& vec);
 
   /** Map from nodes to arithvars. */
-  const ArithVarNodeMap& d_av2nodeMap;
+  const ArithVariables& d_avariables;
 
-  const ArithVarNodeMap& getArithVarNodeMap() const{
-    return d_av2nodeMap;
+  const ArithVariables& getArithVariables() const{
+    return d_avariables;
   }
 
   ArithCongruenceManager& d_congruenceManager;
 
-  //Constraint allocateConstraintForLiteral(ArithVar v, Node literal);
-
   const context::Context * const d_satContext;
   const int d_satAllocationLevel;
 
-  NodeCallBack& d_raiseConflict;
+  RaiseConflict d_raiseConflict;
 
   friend class ConstraintValue;
 
@@ -797,9 +792,9 @@ public:
 
   ConstraintDatabase( context::Context* satContext,
                       context::Context* userContext,
-                      const ArithVarNodeMap& av2nodeMap,
+                      const ArithVariables& variables,
                       ArithCongruenceManager& dm,
-                      NodeCallBack& conflictCallBack);
+                      RaiseConflict conflictCallBack);
 
   ~ConstraintDatabase();
 

@@ -78,12 +78,15 @@ private:
     TimerStat   d_solveTimer;
     IntStat d_numCallsToCheckFullEffort;
     IntStat d_numCallsToCheckStandardEffort; 
+    TimerStat   d_weightComputationTimer;
     Statistics();
     ~Statistics();
   };
 
   Statistics d_statistics;
 
+  context::CDO<bool> d_lemmasAdded;
+  
   // Are we in conflict?
   context::CDO<bool> d_conflict;
 
@@ -146,7 +149,9 @@ private:
 
   void sendConflict();
 
-  void lemma(TNode node) { d_out->lemma(node); }
+  void lemma(TNode node) { d_out->lemma(node); d_lemmasAdded = true; }
+
+  void checkForLemma(TNode node); 
   
   friend class Bitblaster;
   friend class BitblastSolver;

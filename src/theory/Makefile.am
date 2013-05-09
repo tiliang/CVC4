@@ -9,6 +9,7 @@ DIST_SUBDIRS = $(SUBDIRS) example
 noinst_LTLIBRARIES = libtheory.la
 
 libtheory_la_SOURCES = \
+	decision_attributes.h \
 	logic_info.h \
 	logic_info.cpp \
 	output_channel.h \
@@ -41,7 +42,9 @@ libtheory_la_SOURCES = \
 	model.h \
 	model.cpp \
 	rep_set.h \
-	rep_set.cpp
+	rep_set.cpp \
+	atom_requests.h \
+	atom_requests.cpp
 
 nodist_libtheory_la_SOURCES = \
 	rewriter_tables.h \
