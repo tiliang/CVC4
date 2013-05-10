@@ -77,6 +77,8 @@ void TheoryStrings::check(Effort e) {
     Assertion assertion = get();
     TNode fact = assertion.assertion;
 
+	Trace("StringTheory") << "get assertion: " << fact << endl;
+
   }
 }
 

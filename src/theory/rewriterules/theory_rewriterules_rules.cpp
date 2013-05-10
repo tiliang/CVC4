@@ -328,7 +328,7 @@ RewriteRule::RewriteRule(TheoryRewriteRules & re,
   id(++id_next), d_split(willDecide(b)),
   trigger(tr), body(b), new_terms(nt), free_vars(), inst_vars(),
   body_match(re.getSatContext()),trigger_for_body_match(applymatcher),
-  d_cache(re.getSatContext(),re.getQuantifiersEngine()), directrr(drr){
+  d_cache(re.getSatContext(),re.getQuantifiersEngine()), directrr(drr), d_priority(1) {
   free_vars.swap(fv); inst_vars.swap(iv); guards.swap(g); to_remove.swap(to_r);
 };
 

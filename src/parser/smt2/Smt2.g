@@ -560,7 +560,7 @@ rewriterulesCommand[CVC4::Command*& cmd]
       };
       args.push_back(expr);
 	  /* priority */
-	  expr2 = MK_EXPR(CVC4::kind::REWRITE_PRIORITY, priority);
+	  expr2 = MK_CONST(priority);
 	  args.push_back(expr2);
 
       expr = MK_EXPR(CVC4::kind::REWRITE_RULE, args);
@@ -615,7 +615,7 @@ rewriterulesCommand[CVC4::Command*& cmd]
       };
       args.push_back(expr);
 	  /* priority */
-	  expr2 = MK_EXPR(CVC4::kind::REWRITE_PRIORITY, priority);
+	  expr2 = MK_CONST(priority);
 	  args.push_back(expr2);
 
       expr = MK_EXPR(CVC4::kind::REWRITE_RULE, args);
