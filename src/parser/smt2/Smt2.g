@@ -1126,6 +1126,7 @@ builtinOp[CVC4::Kind& kind]
   | BVSGE_TOK     { $kind = CVC4::kind::BITVECTOR_SGE; }
 
   | STRCON_TOK     { $kind = CVC4::kind::STRING_CONCAT; }
+  | STRLEN_TOK     { $kind = CVC4::kind::STRING_LENGTH; }
   | STRINRE_TOK    { $kind = CVC4::kind::STRING_IN_REGEXP; }
   | STRTORE_TOK    { $kind = CVC4::kind::STRING_TO_REGEXP; }
   | RECON_TOK      { $kind = CVC4::kind::REGEXP_CONCAT; }
@@ -1483,6 +1484,7 @@ BVSGE_TOK : 'bvsge';
 
 //STRING
 STRCON_TOK : 'str.++';
+STRLEN_TOK : 'str.len';
 STRINRE_TOK : 'str.in.re';
 STRTORE_TOK : 'str.to.re';
 RECON_TOK : 're.++';

@@ -31,20 +31,11 @@ namespace strings {
 class TheoryStringsRewriter {
 
 public:
+  static Node rewriteConcatString(TNode node);
 
-  static RewriteResponse postRewrite(TNode node) {
-    Trace("strings-postrewrite") << "Strings::postRewrite start " << node << std::endl;
+  static RewriteResponse postRewrite(TNode node);
 
-    Trace("strings-postrewrite") << "Strings::postRewrite returning " << node << std::endl;
-    return RewriteResponse(REWRITE_DONE, node);
-  }
-
-  static inline RewriteResponse preRewrite(TNode node) {
-    Trace("strings-prerewrite") << "Strings::preRewrite start " << node << std::endl;
-
-    Trace("strings-prerewrite") << "Strings::preRewrite returning " << node << std::endl;
-    return RewriteResponse(REWRITE_DONE, node);
-  }
+  static RewriteResponse preRewrite(TNode node);
 
   static inline void init() {}
   static inline void shutdown() {}

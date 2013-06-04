@@ -9,6 +9,7 @@ libstrings_la_SOURCES = \
 	theory_strings.h \
 	theory_strings.cpp \
 	theory_strings_rewriter.h \
+	theory_strings_rewriter.cpp \
 	theory_strings_type_rules.h
 
 EXTRA_DIST = \

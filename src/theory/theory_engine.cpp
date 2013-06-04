@@ -277,7 +277,7 @@ void TheoryEngine::dumpAssertions(const char* tag) {
  * @param effort the effort level to use
  */
 void TheoryEngine::check(Theory::Effort effort) {
-
+	Trace("theory-temp") << "Theory Engine check " << effort << std::endl;
   d_propEngine->checkTime();
 
   // Reset the interrupt flag
@@ -343,6 +343,7 @@ Debug("theory") << "done<" << THEORY << ">" << std::endl; \
       // We do combination if all has been processed and we are in fullcheck
       if (Theory::fullEffort(effort) && d_logicInfo.isSharingEnabled() && !d_factsAsserted && !d_lemmasAdded) {
         // Do the combination
+		Trace("theory-temp") << "Theory Engine do combination" << std::endl;
         Debug("theory") << "TheoryEngine::check(" << effort << "): running combination" << std::endl;
         combineTheories();
       }

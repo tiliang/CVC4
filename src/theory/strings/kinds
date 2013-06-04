@@ -3,7 +3,7 @@
 
 theory THEORY_STRINGS ::CVC4::theory::strings::TheoryStrings "theory/strings/theory_strings.h"
 
-properties stable-infinite check
+properties check parametric propagate
 
 rewriter ::CVC4::theory::strings::TheoryStringsRewriter "theory/strings/theory_strings_rewriter.h"
 
@@ -13,6 +13,8 @@ typechecker "theory/strings/theory_strings_type_rules.h"
 operator STRING_CONCAT 2: "string concat"
 
 operator STRING_IN_REGEXP 2 "membership"
+
+operator STRING_LENGTH 1 "string length"
 
 sort STRING_TYPE \
     Cardinality::INTEGERS \
@@ -87,7 +89,9 @@ typerule REGEXP_OPT ::CVC4::theory::strings::RegExpOptTypeRule
 
 typerule STRING_TO_REGEXP ::CVC4::theory::strings::StringToRegExpTypeRule
 
+
 typerule STRING_CONCAT ::CVC4::theory::strings::StringConcatTypeRule
+typerule STRING_LENGTH ::CVC4::theory::strings::StringLengthTypeRule
 
 typerule STRING_IN_REGEXP ::CVC4::theory::strings::StringInRegExpTypeRule
 

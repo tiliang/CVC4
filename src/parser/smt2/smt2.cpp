@@ -83,6 +83,9 @@ void Smt2::addBitvectorOperators() {
 }
 
 void Smt2::addStringOperators() {
+  addOperator(kind::STRING_CONCAT);
+  addOperator(kind::STRING_LENGTH);
+  //addOperator(kind::STRING_IN_REGEXP);
 }
 
 void Smt2::addTheory(Theory theory) {

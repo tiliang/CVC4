@@ -35,16 +35,29 @@ class StringConcatTypeRule {
 public:
   inline static TypeNode computeType(NodeManager* nodeManager, TNode n, bool check)
       throw (TypeCheckingExceptionPrivate, AssertionException) {
-    unsigned size = 0;
     TNode::iterator it = n.begin();
     TNode::iterator it_end = n.end();
     for (; it != it_end; ++ it) {
        TypeNode t = (*it).getType(check);
        if (!t.isString()) {
-         throw TypeCheckingExceptionPrivate(n, "expecting string terms");
+         throw TypeCheckingExceptionPrivate(n, "expecting string terms in string concat");
        }
 	}
     return nodeManager->stringType();
+  }
+};
+
+class StringLengthTypeRule {
+public:
+  inline static TypeNode computeType(NodeManager* nodeManager, TNode n, bool check)
+      throw (TypeCheckingExceptionPrivate, AssertionException) {
+	if( check ){
+		TypeNode t = n[0].getType(check);
+		if (!t.isString()) {
+		  throw TypeCheckingExceptionPrivate(n, "expecting string terms in string length");
+		}
+	}
+    return nodeManager->integerType();
   }
 };
 
