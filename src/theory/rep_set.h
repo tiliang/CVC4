@@ -23,6 +23,8 @@
 namespace CVC4 {
 namespace theory {
 
+class QuantifiersEngine;
+
 /** this class stores a representative set */
 class RepSet {
 public:
@@ -52,11 +54,25 @@ typedef std::vector< int > RepDomain;
 
 /** this class iterates over a RepSet */
 class RepSetIterator {
+public:
+  enum {
+    ENUM_DOMAIN_ELEMENTS,
+    ENUM_RANGE,
+  };
 private:
+  QuantifiersEngine * d_qe;
   //initialize function
   bool initialize();
+  //for enum ranges
+  std::map< int, Node > d_lower_bounds;
+  //domain size
+  int domainSize( int i );
+  //node this is rep set iterator is for
+  Node d_owner;
+  //reset index
+  bool resetIndex( int i, bool initial = false );
 public:
-  RepSetIterator( RepSet* rs );
+  RepSetIterator( QuantifiersEngine * qe, RepSet* rs );
   ~RepSetIterator(){}
   //set that this iterator will be iterating over instantiations for a quantifier
   bool setQuantifier( Node f );
@@ -65,6 +81,8 @@ public:
 public:
   //pointer to model
   RepSet* d_rep_set;
+  //enumeration type?
+  std::vector< int > d_enum_type;
   //index we are considering
   std::vector< int > d_index;
   //types we are considering
@@ -90,7 +108,7 @@ public:
   /** set index order */
   void setIndexOrder( std::vector< int >& indexOrder );
   /** set domain */
-  void setDomain( std::vector< RepDomain >& domain );
+  //void setDomain( std::vector< RepDomain >& domain );
   /** increment the iterator at index=counter */
   void increment2( int counter );
   /** increment the iterator */

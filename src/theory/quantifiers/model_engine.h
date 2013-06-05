@@ -20,7 +20,6 @@
 #include "theory/quantifiers_engine.h"
 #include "theory/quantifiers/model_builder.h"
 #include "theory/model.h"
-#include "theory/quantifiers/relevant_domain.h"
 #include "theory/quantifiers/full_model_check.h"
 
 namespace CVC4 {
@@ -32,12 +31,8 @@ class ModelEngine : public QuantifiersModule
   friend class RepSetIterator;
 private:
   /** builder class */
-  ModelEngineBuilder* d_builder;
+  QModelBuilder* d_builder;
 private:    //analysis of current model:
-  //relevant domain
-  RelevantDomain d_rel_domain;
-  //full model checker
-  fmcheck::FullModelChecker d_fmc;
   //is the exhaustive instantiation incomplete?
   bool d_incomplete_check;
 private:
@@ -47,14 +42,10 @@ private:
   bool optOneQuantPerRound();
   bool optExhInstEvalSkipMultiple();
 private:
-  enum{
-    check_model_full,
-    check_model_no_inst_gen,
-  };
   //check model
-  int checkModel( int checkOption );
+  int checkModel();
   //exhaustively instantiate quantifier (possibly using mbqi), return number of lemmas produced
-  int exhaustiveInstantiate( Node f, bool useRelInstDomain = false, int effort = 0 );
+  int exhaustiveInstantiate( Node f, int effort = 0 );
 private:
   //temporary statistics
   int d_triedLemmas;
@@ -65,8 +56,7 @@ public:
   ModelEngine( context::Context* c, QuantifiersEngine* qe );
   ~ModelEngine(){}
   //get the builder
-  ModelEngineBuilder* getModelBuilder() { return d_builder; }
-  fmcheck::FullModelChecker* getFullModelChecker() { return &d_fmc; }
+  QModelBuilder* getModelBuilder() { return d_builder; }
 public:
   void check( Theory::Effort e );
   void registerQuantifier( Node f );

@@ -18,7 +18,6 @@
 #include "theory/uf/theory_uf.h"
 #include "theory/uf/theory_uf_strong_solver.h"
 #include "theory/quantifiers/options.h"
-#include "theory/arrays/theory_arrays_model.h"
 #include "theory/quantifiers/first_order_model.h"
 #include "theory/quantifiers/term_database.h"
 #include "theory/quantifiers/quantifiers_attributes.h"
@@ -35,14 +34,14 @@ using namespace CVC4::theory::inst;
 
 //Model Engine constructor
 ModelEngine::ModelEngine( context::Context* c, QuantifiersEngine* qe ) :
-QuantifiersModule( qe ),
-d_rel_domain( qe, qe->getModel() ),
-d_fmc( qe ){
+QuantifiersModule( qe ){
 
-  if( options::fmfNewInstGen() ){
-    d_builder = new ModelEngineBuilderInstGen( c, qe );
+  if( options::fmfFullModelCheck() ){
+    d_builder = new fmcheck::FullModelChecker( c, qe );
+  }else if( options::fmfNewInstGen() ){
+    d_builder = new QModelBuilderInstGen( c, qe );
   }else{
-    d_builder = new ModelEngineBuilderDefault( c, qe );
+    d_builder = new QModelBuilderDefault( c, qe );
   }
 
 }
@@ -67,7 +66,7 @@ void ModelEngine::check( Theory::Effort e ){
         Trace("model-engine") << "---Model Engine Round---" << std::endl;
         //initialize the model
         Trace("model-engine-debug") << "Build model..." << std::endl;
-        d_builder->setEffort( effort );
+        d_builder->d_considerAxioms = effort>=1;
         d_builder->buildModel( fm, false );
         addedLemmas += (int)d_builder->d_addedLemmas;
         //if builder has lemmas, add and return
@@ -76,22 +75,13 @@ void ModelEngine::check( Theory::Effort e ){
           //let the strong solver verify that the model is minimal
           //for debugging, this will if there are terms in the model that the strong solver was not notified of
           ((uf::TheoryUF*)d_quantEngine->getTheoryEngine()->theoryOf( THEORY_UF ))->getStrongSolver()->debugModel( fm );
-          //for full model checking
-          if( d_fmc.isActive() ){
-            Trace("model-engine-debug") << "Reset full model checker..." << std::endl;
-            d_fmc.reset( fm );
-          }
           Trace("model-engine-debug") << "Check model..." << std::endl;
           d_incomplete_check = false;
           //print debug
           Debug("fmf-model-complete") << std::endl;
           debugPrint("fmf-model-complete");
           //successfully built an acceptable model, now check it
-          addedLemmas += checkModel( check_model_full );
-        }else if( d_builder->didInstGen() && d_builder->optExhInstNonInstGenQuant() ){
-          Trace("model-engine-debug") << "Check model for non-inst gen quantifiers..." << std::endl;
-          //check quantifiers that inst-gen didn't apply to
-          addedLemmas += checkModel( check_model_no_inst_gen );
+          addedLemmas += checkModel();
         }
       }
       if( addedLemmas==0 ){
@@ -157,7 +147,7 @@ bool ModelEngine::optExhInstEvalSkipMultiple(){
 #endif
 }
 
-int ModelEngine::checkModel( int checkOption ){
+int ModelEngine::checkModel(){
   int addedLemmas = 0;
   FirstOrderModel* fm = d_quantEngine->getModel();
   //for debugging
@@ -179,21 +169,22 @@ int ModelEngine::checkModel( int checkOption ){
     }
   }
   //full model checking: construct models for all functions
+  /*
   if( d_fmc.isActive() ){
     for (std::map< Node, uf::UfModelTreeGenerator >::iterator it = fm->d_uf_model_gen.begin(); it != fm->d_uf_model_gen.end(); ++it) {
       d_fmc.getModel(fm, it->first);
     }
   }
+  */
   //compute the relevant domain if necessary
-  if( optUseRelevantDomain() ){
-    d_rel_domain.compute();
-  }
+  //if( optUseRelevantDomain() ){
+  //}
   d_triedLemmas = 0;
   d_testLemmas = 0;
   d_relevantLemmas = 0;
   d_totalLemmas = 0;
   Trace("model-engine-debug") << "Do exhaustive instantiation..." << std::endl;
-  int e_max = d_fmc.isActive() ? 2 : 1;
+  int e_max = options::fmfFullModelCheck() && options::fmfModelBasedInst() ? 2 : 1;
   for( int e=0; e<e_max; e++) {
     if (addedLemmas==0) {
       for( int i=0; i<fm->getNumAssertedQuantifiers(); i++ ){
@@ -207,16 +198,9 @@ int ModelEngine::checkModel( int checkOption ){
           }
         }
         d_totalLemmas += totalInst;
-        //determine if we should check this quantifiers
-        bool checkQuant = false;
-        if( checkOption==check_model_full ){
-          checkQuant = d_builder->isQuantifierActive( f );
-        }else if( checkOption==check_model_no_inst_gen ){
-          checkQuant = !d_builder->hasInstGen( f );
-        }
-        //if we need to consider this quantifier on this iteration
-        if( checkQuant ){
-          addedLemmas += exhaustiveInstantiate( f, optUseRelevantDomain(), e );
+        //determine if we should check this quantifier
+        if( d_builder->isQuantifierActive( f ) ){
+          addedLemmas += exhaustiveInstantiate( f, e );
           if( Trace.isOn("model-engine-warn") ){
             if( addedLemmas>10000 ){
               Debug("fmf-exit") << std::endl;
@@ -241,20 +225,9 @@ int ModelEngine::checkModel( int checkOption ){
   return addedLemmas;
 }
 
-int ModelEngine::exhaustiveInstantiate( Node f, bool useRelInstDomain, int effort ){
+int ModelEngine::exhaustiveInstantiate( Node f, int effort ){
   int addedLemmas = 0;
-
-  bool useModel = d_builder->optUseModel();
-  if (d_fmc.isActive() && effort==0) {
-    addedLemmas = d_fmc.exhaustiveInstantiate(d_quantEngine->getModel(), f, effort);
-  }else if( !d_fmc.isActive() || (effort==1 && d_fmc.hasStarExceptions(f)) ) {
-    if(d_fmc.isActive()){
-      useModel = false;
-      int lem = d_fmc.exhaustiveInstantiate(d_quantEngine->getModel(), f, effort);
-      if( lem!=-1 ){
-        return lem;
-      }
-    }
+  if( !d_builder->doExhaustiveInstantiation( d_quantEngine->getModel(), f, effort, addedLemmas ) ){
     Trace("inst-fmf-ei") << "Exhaustive instantiate " << f << ", effort = " << effort << "..." << std::endl;
     Debug("inst-fmf-ei") << "   Instantiation Constants: ";
     for( size_t i=0; i<f[0].getNumChildren(); i++ ){
@@ -262,23 +235,25 @@ int ModelEngine::exhaustiveInstantiate( Node f, bool useRelInstDomain, int effor
     }
     Debug("inst-fmf-ei") << std::endl;
     //create a rep set iterator and iterate over the (relevant) domain of the quantifier
-    RepSetIterator riter( &(d_quantEngine->getModel()->d_rep_set) );
+    RepSetIterator riter( d_quantEngine, &(d_quantEngine->getModel()->d_rep_set) );
     if( riter.setQuantifier( f ) ){
-      Debug("inst-fmf-ei") << "Set domain..." << std::endl;
-      //set the domain for the iterator (the sufficient set of instantiations to try)
-      if( useRelInstDomain ){
-        riter.setDomain( d_rel_domain.d_quant_inst_domain[f] );
+      FirstOrderModelIG * fmig = NULL;
+      if( !options::fmfFullModelCheck() ){
+        fmig = (FirstOrderModelIG*)d_quantEngine->getModel();
+        Debug("inst-fmf-ei") << "Reset evaluate..." << std::endl;
+        fmig->resetEvaluate();
       }
-      Debug("inst-fmf-ei") << "Reset evaluate..." << std::endl;
-      d_quantEngine->getModel()->resetEvaluate();
       Debug("inst-fmf-ei") << "Begin instantiation..." << std::endl;
       int tests = 0;
       int triedLemmas = 0;
       while( !riter.isFinished() && ( addedLemmas==0 || !optOneInstPerQuantRound() ) ){
+        for( int i=0; i<(int)riter.d_index.size(); i++ ){
+          Trace("try") << i << " : " << riter.d_index[i] << " : " << riter.getTerm( i ) << std::endl;
+        }
         d_testLemmas++;
         int eval = 0;
         int depIndex;
-        if( useModel ){
+        if( d_builder->optUseModel() && fmig ){
           //see if instantiation is already true in current model
           Debug("fmf-model-eval") << "Evaluating ";
           riter.debugPrintSmall("fmf-model-eval");
@@ -287,7 +262,7 @@ int ModelEngine::exhaustiveInstantiate( Node f, bool useRelInstDomain, int effor
           //if evaluate(...)==1, then the instantiation is already true in the model
           //  depIndex is the index of the least significant variable that this evaluation relies upon
           depIndex = riter.getNumTerms()-1;
-          eval = d_quantEngine->getModel()->evaluate( d_quantEngine->getTermDatabase()->getInstConstantBody( f ), depIndex, &riter );
+          eval = fmig->evaluate( d_quantEngine->getTermDatabase()->getInstConstantBody( f ), depIndex, &riter );
           if( eval==1 ){
             Debug("fmf-model-eval") << "  Returned success with depIndex = " << depIndex << std::endl;
           }else{
@@ -322,10 +297,12 @@ int ModelEngine::exhaustiveInstantiate( Node f, bool useRelInstDomain, int effor
         }
       }
       //print debugging information
-      d_statistics.d_eval_formulas += d_quantEngine->getModel()->d_eval_formulas;
-      d_statistics.d_eval_uf_terms += d_quantEngine->getModel()->d_eval_uf_terms;
-      d_statistics.d_eval_lits += d_quantEngine->getModel()->d_eval_lits;
-      d_statistics.d_eval_lits_unknown += d_quantEngine->getModel()->d_eval_lits_unknown;
+      if( fmig ){
+        d_statistics.d_eval_formulas += fmig->d_eval_formulas;
+        d_statistics.d_eval_uf_terms += fmig->d_eval_uf_terms;
+        d_statistics.d_eval_lits += fmig->d_eval_lits;
+        d_statistics.d_eval_lits_unknown += fmig->d_eval_lits_unknown;
+      }
       int relevantInst = 1;
       for( size_t i=0; i<f[0].getNumChildren(); i++ ){
         relevantInst = relevantInst * (int)riter.d_domain[i].size();

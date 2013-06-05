@@ -21,6 +21,7 @@
 
 #include "parser/parser.h"
 #include "parser/smt1/smt1.h"
+#include "theory/logic_info.h"
 #include "util/abstract_value.h"
 
 #include <sstream>
@@ -48,7 +49,7 @@ public:
 
 private:
   bool d_logicSet;
-  Smt1::Logic d_logic;
+  LogicInfo d_logic;
 
 protected:
   Smt2(ExprManager* exprManager, Input* input, bool strictMode = false, bool parseOnly = false);
@@ -84,6 +85,8 @@ public:
       parseError(ss.str());
     }
   }
+
+  void includeFile(const std::string& filename);
 
   bool isAbstractValue(const std::string& name) {
     return name.length() >= 2 && name[0] == '@' && name[1] != '0' &&

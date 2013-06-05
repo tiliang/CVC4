@@ -71,7 +71,7 @@ bool QuantArith::isolate( Node v, std::map< Node, Node >& msum, Node & veq, Kind
     Rational r = msum[v].isNull() ? Rational(1) : msum[v].getConst<Rational>();
     if ( r.sgn()!=0 ){
       for( std::map< Node, Node >::iterator it = msum.begin(); it != msum.end(); ++it ){
-        if( it->first!=v ){
+        if( it->first.isNull() || it->first!=v ){
           Node m;
           if( !it->first.isNull() ){
             if ( !it->second.isNull() ){
@@ -107,6 +107,12 @@ bool QuantArith::isolate( Node v, std::map< Node, Node >& msum, Node & veq, Kind
 
 Node QuantArith::negate( Node t ) {
   Node tt = NodeManager::currentNM()->mkNode( MULT, NodeManager::currentNM()->mkConst( Rational(-1) ), t );
+  tt = Rewriter::rewrite( tt );
+  return tt;
+}
+
+Node QuantArith::offset( Node t, int i ) {
+  Node tt = NodeManager::currentNM()->mkNode( PLUS, NodeManager::currentNM()->mkConst( Rational(i) ), t );
   tt = Rewriter::rewrite( tt );
   return tt;
 }
@@ -183,13 +189,13 @@ QuantPhaseReq::QuantPhaseReq( Node n, bool computeEq ){
     for( std::map< Node, bool >::iterator it = d_phase_reqs.begin(); it != d_phase_reqs.end(); ++it ){
       Debug("inst-engine-phase-req") << "   " << it->first << " -> " << it->second << std::endl;
       if( it->first.getKind()==EQUAL ){
-        if( it->first[0].hasAttribute(InstConstantAttribute()) ){
-          if( !it->first[1].hasAttribute(InstConstantAttribute()) ){
+        if( quantifiers::TermDb::hasInstConstAttr(it->first[0]) ){
+          if( !quantifiers::TermDb::hasInstConstAttr(it->first[1]) ){
             d_phase_reqs_equality_term[ it->first[0] ] = it->first[1];
             d_phase_reqs_equality[ it->first[0] ] = it->second;
             Debug("inst-engine-phase-req") << "      " << it->first[0] << ( it->second ? " == " : " != " ) << it->first[1] << std::endl;
           }
-        }else if( it->first[1].hasAttribute(InstConstantAttribute()) ){
+        }else if( quantifiers::TermDb::hasInstConstAttr(it->first[1]) ){
           d_phase_reqs_equality_term[ it->first[1] ] = it->first[0];
           d_phase_reqs_equality[ it->first[1] ] = it->second;
           Debug("inst-engine-phase-req") << "      " << it->first[1] << ( it->second ? " == " : " != " ) << it->first[0] << std::endl;

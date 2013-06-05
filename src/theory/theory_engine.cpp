@@ -187,7 +187,30 @@ void TheoryEngine::preRegister(TNode preprocessed) {
       }
 
       // Pre-register the terms in the atom
-      bool multipleTheories = NodeVisitor<PreRegisterVisitor>::run(d_preRegistrationVisitor, preprocessed);
+      Theory::Set theories = NodeVisitor<PreRegisterVisitor>::run(d_preRegistrationVisitor, preprocessed);
+      theories = Theory::setRemove(THEORY_BOOL, theories);
+      // Remove the top theory, if any more that means multiple theories were involved
+      bool multipleTheories = Theory::setRemove(Theory::theoryOf(preprocessed), theories);
+      TheoryId i;
+      // These checks don't work with finite model finding, because it
+      // uses Rational constants to represent cardinality constraints,
+      // even though arithmetic isn't actually involved.
+      if(!options::finiteModelFind()) {
+        while((i = Theory::setPop(theories)) != THEORY_LAST) {
+          if(!d_logicInfo.isTheoryEnabled(i)) {
+            LogicInfo newLogicInfo = d_logicInfo.getUnlockedCopy();
+            newLogicInfo.enableTheory(i);
+            newLogicInfo.lock();
+            stringstream ss;
+            ss << "The logic was specified as " << d_logicInfo.getLogicString()
+               << ", which doesn't include " << i
+               << ", but found a term in that theory." << endl
+               << "You might want to extend your logic to "
+               << newLogicInfo.getLogicString() << endl;
+            throw LogicException(ss.str());
+          }
+        }
+      }
       if (multipleTheories) {
         // Collect the shared terms if there are multipe theories
         NodeVisitor<SharedTermsVisitor>::run(d_sharedTermsVisitor, preprocessed);
@@ -1288,6 +1311,18 @@ theory::LemmaStatus TheoryEngine::lemma(TNode node, bool negated, bool removable
   additionalLemmas.push_back(node);
   d_iteRemover.run(additionalLemmas, iteSkolemMap);
   additionalLemmas[0] = theory::Rewriter::rewrite(additionalLemmas[0]);
+
+  if(Trace.isOn("lemma-ites")) {
+    Debug("lemma-ites") << "removed ITEs from lemma: " << node << std::endl;
+    Debug("lemma-ites") << " + now have the following "
+                        << additionalLemmas.size() << " lemma(s):" << std::endl;
+    for(std::vector<Node>::const_iterator i = additionalLemmas.begin();
+        i != additionalLemmas.end();
+        ++i) {
+      Debug("lemma-ites") << " + " << *i << std::endl;
+    }
+    Debug("lemma-ites") << std::endl;
+  }
 
   // assert to prop engine
   d_propEngine->assertLemma(additionalLemmas[0], negated, removable);

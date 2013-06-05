@@ -23,8 +23,6 @@ libquantifiers_la_SOURCES = \
 	model_engine.cpp \
 	modes.cpp \
 	modes.h \
-	relevant_domain.h \
-	relevant_domain.cpp \
 	term_database.h \
 	term_database.cpp \
 	first_order_model.h \
@@ -48,7 +46,9 @@ libquantifiers_la_SOURCES = \
 	full_model_check.h \
 	full_model_check.cpp \
 	bounded_integers.h \
-	bounded_integers.cpp
+	bounded_integers.cpp \
+	first_order_reasoning.h \
+	first_order_reasoning.cpp
 
 EXTRA_DIST = \
 	kinds \

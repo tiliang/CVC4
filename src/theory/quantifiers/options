@@ -47,6 +47,9 @@ option aggressiveMiniscopeQuant --ag-miniscope-quant bool :default false
 # Whether to perform quantifier macro expansion
 option macrosQuant --macros-quant bool :default false
  perform quantifiers macro expansions
+# Whether to perform first-order propagation
+option foPropQuant --fo-prop-quant bool :default false
+ perform first-order propagation on quantifiers
 
 # Whether to use smart triggers
 option smartTriggers /--disable-smart-triggers bool :default true
@@ -106,11 +109,15 @@ option fmfRelevantDomain --fmf-relevant-domain bool :default false
 option fmfNewInstGen --fmf-new-inst-gen bool :default false
  use new inst gen technique for answering sat without exhaustive instantiation
 option fmfInstGen --fmf-inst-gen/--disable-fmf-inst-gen bool :read-write :default true
- enable/disable Inst-Gen instantiation techniques for finite model finding
+ enable Inst-Gen instantiation techniques for finite model finding (default)
+/disable Inst-Gen instantiation techniques for finite model finding
 option fmfInstGenOneQuantPerRound --fmf-inst-gen-one-quant-per-round bool :default false
  only perform Inst-Gen instantiation techniques on one quantifier per round
 option fmfFreshDistConst --fmf-fresh-dc bool :default false
  use fresh distinguished representative when applying Inst-Gen techniques
+
+option fmfBoundInt --fmf-bound-int bool :default false
+ finite model finding on bounded integer quantification
 
 option axiomInstMode --axiom-inst=MODE CVC4::theory::quantifiers::AxiomInstMode :default CVC4::theory::quantifiers::AXIOM_INST_MODE_DEFAULT :include "theory/quantifiers/modes.h" :handler CVC4::theory::quantifiers::stringToAxiomInstMode :handler-include "theory/quantifiers/options_handlers.h"
  policy for instantiating axioms
