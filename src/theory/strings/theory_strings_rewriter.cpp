@@ -83,27 +83,11 @@ Node TheoryStringsRewriter::rewriteConcatString(TNode node) {
 
 RewriteResponse TheoryStringsRewriter::postRewrite(TNode node) {
   Trace("strings-postrewrite") << "Strings::postRewrite start " << node << std::endl;
+  Node retNode = node;
 
-  if(node.getKind() == kind::EQUAL) {
-    if(node[0] == node[1]) {
-      return RewriteResponse(REWRITE_DONE, NodeManager::currentNM()->mkConst(true));
-    }
-    if(node[0].isConst() && node[1].isConst() && node[0] != node[1]) {
-      return RewriteResponse(REWRITE_DONE, NodeManager::currentNM()->mkConst(false));
-    }
-    if(node[0] > node[1]) {
-      return RewriteResponse(REWRITE_DONE, NodeManager::currentNM()->mkNode(kind::EQUAL, node[1], node[0]));
-    }
-  }
-  Trace("strings-postrewrite") << "Strings::postRewrite returning " << node << std::endl;
-  return RewriteResponse(REWRITE_DONE, node);
-}
-
-RewriteResponse TheoryStringsRewriter::preRewrite(TNode node) {
-	Node retNode = node;
-    Trace("strings-prerewrite") << "Strings::preRewrite start " << node << std::endl;
-
-	if(node.getKind() == kind::EQUAL) {
+	if(node.getKind() == kind::STRING_CONCAT) {
+		retNode = rewriteConcatString(node);
+	} else if(node.getKind() == kind::EQUAL) {
 		Node leftNode  = node[0];
 		if(node[0].getKind() == kind::STRING_CONCAT) {
 			leftNode = rewriteConcatString(node[0]);
@@ -112,10 +96,17 @@ RewriteResponse TheoryStringsRewriter::preRewrite(TNode node) {
 		if(node[1].getKind() == kind::STRING_CONCAT) {
 			rightNode = rewriteConcatString(node[1]);
 		}
-		if( leftNode != node[0] || rightNode != node[1]) {
+
+		if(leftNode == rightNode) {
+			retNode = NodeManager::currentNM()->mkConst(true);
+		} else if(leftNode.isConst() && rightNode.isConst()) {
+			retNode = NodeManager::currentNM()->mkConst(false);
+		} else if(leftNode > rightNode) {
+			retNode = NodeManager::currentNM()->mkNode(kind::EQUAL, rightNode, leftNode);
+		} else if( leftNode != node[0] || rightNode != node[1]) {
 			retNode = NodeManager::currentNM()->mkNode(kind::EQUAL, leftNode, rightNode);
 		}
-   	} else if(node.getKind() == kind::STRING_IN_REGEXP) {
+	} else if(node.getKind() == kind::STRING_IN_REGEXP) {
 		Node leftNode  = node[0];
 		if(node[0].getKind() == kind::STRING_CONCAT) {
 			leftNode = rewriteConcatString(node[0]);
@@ -146,6 +137,18 @@ RewriteResponse TheoryStringsRewriter::preRewrite(TNode node) {
 				retNode = NodeManager::currentNM()->mkNode(kind::PLUS, node_vec);
 			}
 		}
+	}
+
+  Trace("strings-postrewrite") << "Strings::postRewrite returning " << node << std::endl;
+  return RewriteResponse(REWRITE_DONE, retNode);
+}
+
+RewriteResponse TheoryStringsRewriter::preRewrite(TNode node) {
+	Node retNode = node;
+    Trace("strings-prerewrite") << "Strings::preRewrite start " << node << std::endl;
+
+	if(node.getKind() == kind::STRING_CONCAT) {
+		retNode = rewriteConcatString(node);
 	}
 
     Trace("strings-prerewrite") << "Strings::preRewrite returning " << retNode << std::endl;
