@@ -22,6 +22,8 @@
 #include "theory/theory.h"
 #include "theory/uf/equality_engine.h"
 
+#include "context/cdchunk_list.h"
+
 namespace CVC4 {
 namespace theory {
 namespace strings {
@@ -32,7 +34,7 @@ namespace strings {
  */
 
 class TheoryStrings : public Theory {
-
+  typedef context::CDChunkList<Node> NodeList;
   public:
 
   TheoryStrings(context::Context* c, context::UserContext* u, OutputChannel& out, Valuation valuation, const LogicInfo& logicInfo, QuantifiersEngine* qe);
@@ -116,7 +118,9 @@ class TheoryStrings : public Theory {
 	//list of pairs of nodes to merge
 	  std::map< Node, Node > d_pending_exp;
 	  std::vector< Node > d_pending;
-
+  /** inferences */
+  NodeList d_infer;
+  NodeList d_infer_exp;
   /////////////////////////////////////////////////////////////////////////////
   // MODEL GENERATION
   /////////////////////////////////////////////////////////////////////////////
@@ -146,14 +150,17 @@ class TheoryStrings : public Theory {
     EqcInfo( context::Context* c );
     ~EqcInfo(){}
     //constant in this eqc
-    context::CDO< Node > d_constant;
-    //context::CDO< Node > d_has_length;
+    context::CDO< Node > d_length_term;
   };
   /** map from representatives to information necessary for equivalence classes */
   std::map< Node, EqcInfo* > d_eqc_info;
   EqcInfo * getOrMakeEqcInfo( Node eqc, bool doMake = true );
   //maintain which concat terms have the length lemma instantiatied
   std::map< Node, bool > d_length_inst;
+  private:
+	std::map< Node, std::vector< Node > > d_normal_forms;
+	void normalizeEquivalenceClass( Node n, std::vector< Node > & visited, std::vector< Node > & nf, std::vector< Node > & nf_exp );
+	bool areLengthsEqual( Node n1, Node n2 ); //TODO
   public:
   void preRegisterTerm(TNode n);
   void check(Effort e);
