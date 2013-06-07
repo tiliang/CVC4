@@ -98,7 +98,7 @@ struct StringHashFunction {
 
 inline std::ostream& operator <<(std::ostream& os, const String& s) CVC4_PUBLIC;
 inline std::ostream& operator <<(std::ostream& os, const String& s) {
-  return os << s.toString();
+  return os << s.toString() ;
 }
 
 class CVC4_PUBLIC RegExp {

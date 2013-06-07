@@ -118,6 +118,8 @@ class TheoryStrings : public Theory {
 	//list of pairs of nodes to merge
 	  std::map< Node, Node > d_pending_exp;
 	  std::vector< Node > d_pending;
+  bool hasTerm( Node a );
+  bool areEqual( Node a, Node b );
   /** inferences */
   NodeList d_infer;
   NodeList d_infer_exp;
