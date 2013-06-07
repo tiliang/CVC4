@@ -518,7 +518,14 @@ void TheoryStrings::normalizeEquivalenceClass( Node eqc, std::vector< Node > & v
 							unsigned index_k = index_i==normal_forms[i].size() ? index_j : index_i;
 							while(!d_conflict && index_k<normal_forms[k].size()) {
 								//can infer that this string must be empty
-								Node eq_exp = NodeManager::currentNM()->mkNode( kind::AND, curr_exp );
+								Node eq_exp;
+								if( curr_exp.empty() ) {
+									eq_exp = NodeManager::currentNM()->mkConst(true);
+								} else if( curr_exp.size() == 1 ) {
+									eq_exp = curr_exp[0];
+								} else {
+									eq_exp = NodeManager::currentNM()->mkNode( kind::AND, curr_exp );
+								}
 								Node eq = NodeManager::currentNM()->mkNode( kind::EQUAL, d_emptyString, normal_forms[k][index_k] );
 								Trace("strings-infer") << "Strings : Infer " << eq << " from " << eq_exp << std::endl;
 								d_equalityEngine.assertEquality( eq, true, eq_exp );
@@ -562,7 +569,8 @@ void TheoryStrings::normalizeEquivalenceClass( Node eqc, std::vector< Node > & v
 								std::vector< Node > temp_exp;
 								temp_exp.insert(temp_exp.end(), curr_exp.begin(), curr_exp.end() );
 								temp_exp.push_back(NodeManager::currentNM()->mkNode( kind::EQUAL, length_term_i, length_term_j ));
-								Node eq_exp = NodeManager::currentNM()->mkNode( kind::AND, temp_exp );
+								Node eq_exp = temp_exp.empty() ? NodeManager::currentNM()->mkConst(true) :
+												temp_exp.size() == 1 ? temp_exp[0] : NodeManager::currentNM()->mkNode( kind::AND, temp_exp );
 								Trace("strings-infer") << "Strings : Infer " << eq << " from " << eq_exp << std::endl;
 								d_equalityEngine.assertEquality( eq, true, eq_exp );
 								d_infer.push_back(eq);
@@ -589,14 +597,6 @@ void TheoryStrings::normalizeEquivalenceClass( Node eqc, std::vector< Node > & v
 											int l = const_str.toString().size()<other_str.toString().size() ? j : i;
 											int index_l = const_str.toString().size()<other_str.toString().size() ? index_j : index_i;
 											Node remainderStr = NodeManager::currentNM()->mkConst( ::CVC4::String(const_str.toString().substr(len_short) ) );
-											//adds remainder length
-											//Node r_len_right = NodeManager::currentNM()->mkConst( ::CVC4::Rational(const_str.toString().size()) );
-											//Node r_len_left = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, remainderStr );
-											//Node r_len_con = NodeManager::currentNM()->mkNode( kind::EQUAL, r_len_left, r_len_right );
-											//Trace("strings-lemma") << "Strings: Add lemma " << r_len_con << std::endl;
-											//d_out->lemma(r_len_con);
-											//d_equalityEngine.assertEquality(r_len_con, true, r_len_con);
-											//
 											Trace("strings-solve-debug") << "Break normal form of " << normal_forms[l][index_l] << " into " << normal_forms[k][index_k] << ", " << remainderStr << std::endl;
 											normal_forms[l].insert( normal_forms[l].begin()+index_l + 1, remainderStr );
 											normal_forms[l][index_l] = normal_forms[k][index_k];
@@ -607,7 +607,8 @@ void TheoryStrings::normalizeEquivalenceClass( Node eqc, std::vector< Node > & v
 											antec.insert(antec.end(), curr_exp.begin(), curr_exp.end() );
 										}
 									} else if( other_str.getKind() == kind::VARIABLE ) {
-										Node firstChar = NodeManager::currentNM()->mkConst( ::CVC4::String(const_str.toString().substr(0, 1) ) );
+										Node firstChar = const_str.toString().size() == 1 ? const_str :
+											NodeManager::currentNM()->mkConst( ::CVC4::String(const_str.toString().substr(0, 1) ) );
 										//split the string
 										Node sk = NodeManager::currentNM()->mkSkolem( "ssym_$$", normal_forms[i][index_i].getType(), "created for split" );
 										Node eq1 = NodeManager::currentNM()->mkNode( kind::EQUAL, other_str, d_emptyString );
@@ -657,7 +658,9 @@ void TheoryStrings::normalizeEquivalenceClass( Node eqc, std::vector< Node > & v
 										antec_exp.push_back(antec_new_lits[i]);
 									}
 									Node ant;
-									if( antec_exp.size()==1 ) {
+									if( antec_exp.empty() ) {
+										ant = NodeManager::currentNM()->mkConst(true);
+									} else if( antec_exp.size()==1 ) {
 										ant = antec_exp[0];
 									} else {
 										ant = NodeManager::currentNM()->mkNode( kind::AND, antec_exp );
