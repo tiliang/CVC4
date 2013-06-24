@@ -34,7 +34,7 @@ Node TheoryStringsRewriter::rewriteConcatString(TNode node) {
 				unsigned int j=0;
 				if(!preNode.isNull()) {
 					if(tmpNode[0].isConst()) {
-						preNode = NodeManager::currentNM()->mkConst( ::CVC4::String( preNode.toString() + tmpNode[0].toString()) );
+						preNode = NodeManager::currentNM()->mkConst( preNode.getConst<String>().concat( tmpNode[0].getConst<String>() ) );
 						node_vec.push_back( preNode );
 						preNode = Node::null();
 						++j;
@@ -53,7 +53,7 @@ Node TheoryStringsRewriter::rewriteConcatString(TNode node) {
 		}
 		if(!tmpNode.isConst()) {
 			if(preNode != Node::null()) {
-				if(preNode.getKind() == kind::CONST_STRING && preNode.toString() == "") {
+				if(preNode.getKind() == kind::CONST_STRING && preNode.getConst<String>().toString()=="" ) {
 					preNode = Node::null();
 				} else {
 					node_vec.push_back( preNode );
@@ -65,7 +65,7 @@ Node TheoryStringsRewriter::rewriteConcatString(TNode node) {
 			if(preNode.isNull()) {
 				preNode = tmpNode;
 			} else {
-				preNode = NodeManager::currentNM()->mkConst( ::CVC4::String( preNode.toString() + tmpNode.toString()) );
+				preNode = NodeManager::currentNM()->mkConst( preNode.getConst<String>().concat( tmpNode.getConst<String>() ) );
 			}
 		}
 	}
@@ -119,17 +119,17 @@ RewriteResponse TheoryStringsRewriter::postRewrite(TNode node) {
 		}
 	} else if(node.getKind() == kind::STRING_LENGTH) {
 		if(node[0].isConst()) {
-			retNode = NodeManager::currentNM()->mkConst( ::CVC4::Rational( node[0].toString().size() ) );
+			retNode = NodeManager::currentNM()->mkConst( ::CVC4::Rational( node[0].getConst<String>().size() ) );
 		} else if(node[0].getKind() == kind::STRING_CONCAT) {
 			Node tmpNode = rewriteConcatString(node[0]);
 			if(tmpNode.isConst()) {
-				retNode = NodeManager::currentNM()->mkConst( ::CVC4::Rational( tmpNode.toString().size() ) );
+				retNode = NodeManager::currentNM()->mkConst( ::CVC4::Rational( tmpNode.getConst<String>().size() ) );
 			} else {
 				// it has to be string concat
 				std::vector<Node> node_vec;
 				for(unsigned int i=0; i<tmpNode.getNumChildren(); ++i) {
 					if(tmpNode[i].isConst()) {
-						node_vec.push_back( NodeManager::currentNM()->mkConst( ::CVC4::Rational( tmpNode[i].toString().size() ) ) );
+						node_vec.push_back( NodeManager::currentNM()->mkConst( ::CVC4::Rational( tmpNode[i].getConst<String>().size() ) ) );
 					} else {
 						node_vec.push_back( NodeManager::currentNM()->mkNode(kind::STRING_LENGTH, tmpNode[i]) );
 					}

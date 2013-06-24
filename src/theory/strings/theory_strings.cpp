@@ -246,7 +246,7 @@ void TheoryStrings::check(Effort e) {
 					lsum = NodeManager::currentNM()->mkNode( kind::PLUS, node_vec );
 				}else{
 					//add lemma
-					lsum = NodeManager::currentNM()->mkConst( ::CVC4::Rational( n.toString().size() ) );
+					lsum = NodeManager::currentNM()->mkConst( ::CVC4::Rational( n.getConst<String>().size() ) );
 				}
 				Node ceq = NodeManager::currentNM()->mkNode( kind::EQUAL, skl, lsum );
 				ceq = Rewriter::rewrite(ceq);
@@ -588,15 +588,15 @@ void TheoryStrings::normalizeEquivalenceClass( Node eqc, std::vector< Node > & v
 									Node const_str = normal_forms[i][index_i].getKind() == kind::CONST_STRING ? normal_forms[i][index_i] : normal_forms[j][index_j];
 									Node other_str = normal_forms[i][index_i].getKind() == kind::CONST_STRING ? normal_forms[j][index_j] : normal_forms[i][index_i];
 									if( other_str.getKind() == kind::CONST_STRING ) {
-										unsigned len_short = const_str.toString().size() <= other_str.toString().size() ? const_str.toString().size() : other_str.toString().size();
-										if(strncmp(const_str.toString().c_str(), other_str.toString().c_str(), len_short) == 0) {
+										unsigned len_short = const_str.getConst<String>().size() <= other_str.getConst<String>().size() ? const_str.getConst<String>().size() : other_str.getConst<String>().size();
+										if(strncmp(const_str.getConst<String>().c_str(), other_str.getConst<String>().c_str(), len_short) == 0) {
 											//same prefix
 											//k is the index of the string that is shorter
-											int k = const_str.toString().size()<other_str.toString().size() ? i : j;
-											int index_k = const_str.toString().size()<other_str.toString().size() ? index_i : index_j;
-											int l = const_str.toString().size()<other_str.toString().size() ? j : i;
-											int index_l = const_str.toString().size()<other_str.toString().size() ? index_j : index_i;
-											Node remainderStr = NodeManager::currentNM()->mkConst( ::CVC4::String(const_str.toString().substr(len_short) ) );
+											int k = const_str.getConst<String>().size()<other_str.getConst<String>().size() ? i : j;
+											int index_k = const_str.getConst<String>().size()<other_str.getConst<String>().size() ? index_i : index_j;
+											int l = const_str.getConst<String>().size()<other_str.getConst<String>().size() ? j : i;
+											int index_l = const_str.getConst<String>().size()<other_str.getConst<String>().size() ? index_j : index_i;
+											Node remainderStr = NodeManager::currentNM()->mkConst( ::CVC4::String(const_str.getConst<String>().substr(len_short) ) );
 											Trace("strings-solve-debug") << "Break normal form of " << normal_forms[l][index_l] << " into " << normal_forms[k][index_k] << ", " << remainderStr << std::endl;
 											normal_forms[l].insert( normal_forms[l].begin()+index_l + 1, remainderStr );
 											normal_forms[l][index_l] = normal_forms[k][index_k];
@@ -607,13 +607,19 @@ void TheoryStrings::normalizeEquivalenceClass( Node eqc, std::vector< Node > & v
 											antec.insert(antec.end(), curr_exp.begin(), curr_exp.end() );
 										}
 									} else if( other_str.getKind() == kind::VARIABLE ) {
-										Node firstChar = const_str.toString().size() == 1 ? const_str :
-											NodeManager::currentNM()->mkConst( ::CVC4::String(const_str.toString().substr(0, 1) ) );
+										Node firstChar = const_str.getConst<String>().size() == 1 ? const_str :
+											NodeManager::currentNM()->mkConst( ::CVC4::String(const_str.getConst<String>().substr(0, 1) ) );
 										//split the string
 										Node sk = NodeManager::currentNM()->mkSkolem( "ssym_$$", normal_forms[i][index_i].getType(), "created for split" );
+										// |sk| >= 0
+										Node sk_len = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, sk );
+										Node zero = NodeManager::currentNM()->mkConst( ::CVC4::Rational( 0 ) );
+	  									Node sk_len_geq_zero = NodeManager::currentNM()->mkNode( kind::GEQ, sk_len, zero);
+
 										Node eq1 = NodeManager::currentNM()->mkNode( kind::EQUAL, other_str, d_emptyString );
-										Node eq2 = NodeManager::currentNM()->mkNode( kind::EQUAL, other_str, 
+										Node eq2_m = NodeManager::currentNM()->mkNode( kind::EQUAL, other_str, 
 													NodeManager::currentNM()->mkNode( kind::STRING_CONCAT, firstChar, sk ) );
+										Node eq2 = NodeManager::currentNM()->mkNode( kind::AND, eq2_m, sk_len_geq_zero ); 
 										conc = NodeManager::currentNM()->mkNode( kind::OR, eq1, eq2 );
 										sendLemma = true;
 									}
@@ -632,9 +638,12 @@ void TheoryStrings::normalizeEquivalenceClass( Node eqc, std::vector< Node > & v
 												NodeManager::currentNM()->mkNode( kind::STRING_CONCAT, normal_forms[i][index_i], sk ) );
 									conc = NodeManager::currentNM()->mkNode( kind::OR, eq1, eq2 );
 									sendLemma = true;
-									Node sk_non_empty = NodeManager::currentNM()->mkNode( kind::EQUAL, sk, d_emptyString).negate();
-									Trace("strings-lemma") << "Strings lemma : " << sk_non_empty << std::endl;
-									d_out->lemma(sk_non_empty);
+									// |sk| > 0
+									Node sk_len = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, sk );
+									Node zero = NodeManager::currentNM()->mkConst( ::CVC4::Rational( 0 ) );
+									Node sk_gt_zero = NodeManager::currentNM()->mkNode( kind::GT, sk_len, zero);
+									Trace("strings-lemma") << "Strings lemma : " << sk_gt_zero << std::endl;
+									d_out->lemma(sk_gt_zero);
 									//success will be false
 								}
 								if( sendLemma ){
@@ -667,7 +676,7 @@ void TheoryStrings::normalizeEquivalenceClass( Node eqc, std::vector< Node > & v
 									}
 									if( conc.isNull() ){
 										d_out->conflict(ant);
-										Trace("strings-lemma") << "Strings conflict : " << ant << std::endl;
+										Trace("strings-conflict") << "Strings conflict : " << ant << std::endl;
 										d_conflict = true;
 									}else{
 										Node lem = NodeManager::currentNM()->mkNode( kind::IMPLIES, ant, conc );

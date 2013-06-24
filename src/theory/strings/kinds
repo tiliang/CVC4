@@ -30,9 +30,9 @@ sort REGEXP_TYPE \
         "util/regexp.h" \
     "RegExp type" 
 
-#enumerator STRING_TYPE \
-#    "::CVC4::theory::strings::StringEnumerator" \
-#    "theory/strings/type_enumerator.h"
+enumerator STRING_TYPE \
+    "::CVC4::theory::strings::StringEnumerator" \
+    "theory/strings/type_enumerator.h"
 
 #enumerator REGEXP_TYPE \
 #    "::CVC4::theory::strings::RegExpEnumerator" \

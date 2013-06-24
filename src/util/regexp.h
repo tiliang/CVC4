@@ -81,8 +81,19 @@ public:
     return d_str;
   }
 
-  unsigned getSize() const {
+  unsigned size() const {
     return d_str.size();
+  }
+  
+  const char* c_str() const {
+  	return d_str.c_str();
+  }
+  
+  std::string substr(unsigned i) const {
+  	return d_str.substr(i);
+  }
+  std::string substr(unsigned i, unsigned j) const {
+  	return d_str.substr(i, j);
   }
 };/* class String */
 
@@ -98,7 +109,7 @@ struct StringHashFunction {
 
 inline std::ostream& operator <<(std::ostream& os, const String& s) CVC4_PUBLIC;
 inline std::ostream& operator <<(std::ostream& os, const String& s) {
-  return os << s.toString() ;
+  return os << "\"" << s.toString() << "\"";
 }
 
 class CVC4_PUBLIC RegExp {
@@ -165,7 +176,7 @@ public:
     return d_str;
   }
 
-  unsigned getSize() const {
+  unsigned size() const {
     return d_str.size();
   }
 };/* class String */
