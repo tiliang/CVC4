@@ -606,7 +606,8 @@ void TheoryStrings::normalizeEquivalenceClass( Node eqc, std::vector< Node > & v
 											sendLemma = true;
 											antec.insert(antec.end(), curr_exp.begin(), curr_exp.end() );
 										}
-									} else if( other_str.getKind() == kind::VARIABLE ) {
+									} else {
+										Assert( other_str.getKind()!=kind::STRING_CONCAT ); 
 										Node firstChar = const_str.getConst<String>().size() == 1 ? const_str :
 											NodeManager::currentNM()->mkConst( ::CVC4::String(const_str.getConst<String>().substr(0, 1) ) );
 										//split the string
@@ -621,6 +622,7 @@ void TheoryStrings::normalizeEquivalenceClass( Node eqc, std::vector< Node > & v
 													NodeManager::currentNM()->mkNode( kind::STRING_CONCAT, firstChar, sk ) );
 										Node eq2 = NodeManager::currentNM()->mkNode( kind::AND, eq2_m, sk_len_geq_zero ); 
 										conc = NodeManager::currentNM()->mkNode( kind::OR, eq1, eq2 );
+										Trace("strings-solve-debug") << "Break normal form constant/variable " << std::endl;
 										sendLemma = true;
 									}
 								}else{
@@ -646,6 +648,7 @@ void TheoryStrings::normalizeEquivalenceClass( Node eqc, std::vector< Node > & v
 									d_out->lemma(sk_gt_zero);
 									//success will be false
 								}
+								Trace("strings-solve-debug2") << "sendLemma/success : " << sendLemma << " " << success << std::endl;
 								if( sendLemma ){
 									std::vector< TNode > antec_exp;
 									for( unsigned i=0; i<antec.size(); i++ ){
