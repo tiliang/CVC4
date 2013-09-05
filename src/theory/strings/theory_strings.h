@@ -153,6 +153,7 @@ class TheoryStrings : public Theory {
     ~EqcInfo(){}
     //constant in this eqc
     context::CDO< Node > d_length_term;
+	context::CDO< unsigned > d_cardinality_lem_k;
   };
   /** map from representatives to information necessary for equivalence classes */
   std::map< Node, EqcInfo* > d_eqc_info;

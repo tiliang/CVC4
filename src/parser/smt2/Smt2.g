@@ -701,6 +701,7 @@ simpleSymbolicExprNoKeyword[CVC4::SExpr& sexpr]
 @declarations {
   CVC4::Kind k;
   std::string s;
+  std::vector<unsigned int> s_vec;
 }
   : INTEGER_LITERAL
     { sexpr = SExpr(Integer(AntlrInput::tokenText($INTEGER_LITERAL))); }
@@ -708,6 +709,13 @@ simpleSymbolicExprNoKeyword[CVC4::SExpr& sexpr]
     { sexpr = SExpr(AntlrInput::tokenToRational($DECIMAL_LITERAL)); }
   | str[s]
     { sexpr = SExpr(s); }
+//  | LPAREN_TOK STRCST_TOK 
+//      ( INTEGER_LITERAL { 
+//	    s_vec.push_back( atoi( AntlrInput::tokenText($INTEGER_LITERAL) ) + 65 );
+//	  } )* RPAREN_TOK
+//   { 
+//	sexpr = SExpr( MK_CONST( ::CVC4::String(s_vec) ) );
+//	}
   | symbol[s,CHECK_NONE,SYM_SORT]
     { sexpr = SExpr(SExpr::Keyword(s)); }
   | builtinOp[k]
@@ -1575,6 +1583,7 @@ BVSGT_TOK : 'bvsgt';
 BVSGE_TOK : 'bvsge';
 
 //STRING
+STRCST_TOK : 'str.const';
 STRCON_TOK : 'str.++';
 STRLEN_TOK : 'str.len';
 STRINRE_TOK : 'str.in.re';

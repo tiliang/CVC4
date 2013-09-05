@@ -22,7 +22,8 @@
 #include "expr/command.h"
 #include "theory/model.h"
 #include "smt/logic_exception.h"
-
+#include "theory/strings/options.h"
+#include <cmath>
 
 using namespace std;
 
@@ -164,6 +165,9 @@ void TheoryStrings::dealPositiveWordEquation(TNode n) {
 void TheoryStrings::check(Effort e) {
   bool polarity;
   TNode atom;
+
+  int cardinality = options::stringCharCardinality();
+  Trace("strings-solve-debug2") << "get cardinality: " << cardinality << endl;
 
   while ( !done() && !d_conflict)
   {
@@ -307,10 +311,92 @@ void TheoryStrings::check(Effort e) {
 		++eqcs_i;
 	  }
   }
+  // solve the cardinality
+  if(!addedLemma) {
+	  eq::EqClassesIterator eqcs_i = eq::EqClassesIterator( &d_equalityEngine );
+	  unsigned leqc_counter = 0;
+	  std::map< Node, unsigned > eqc_to_leqc;
+	  std::map< unsigned, Node > leqc_to_eqc;
+	  std::map< unsigned, std::vector< Node > > eqc_to_strings;
+	  while( !eqcs_i.isFinished() ){
+		Node eqc = (*eqcs_i);
+		//if eqc.getType is string
+		if (eqc.getType().isString()) {
+			EqcInfo* ei = getOrMakeEqcInfo( eqc, true );
+		    Node lt = ei->d_length_term;
+			lt = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, lt );
+			if( !lt.isNull() ){
+			  Node r = d_equalityEngine.getRepresentative( lt );
+			  if( eqc_to_leqc.find( r )==eqc_to_leqc.end() ){
+			    eqc_to_leqc[r] = leqc_counter;
+				leqc_to_eqc[leqc_counter] = r;
+				leqc_counter++;
+			  }
+			  eqc_to_strings[ eqc_to_leqc[r] ].push_back( eqc );
+			}else{
+			  eqc_to_strings[leqc_counter].push_back( eqc );
+              leqc_counter++;
+			}
+	    }
+		++eqcs_i;
+	  }
+	  for( std::map< unsigned, std::vector< Node > >::iterator it = eqc_to_strings.begin(); it != eqc_to_strings.end(); ++it ){
+	    Node lr = leqc_to_eqc[it->first];
+		Trace("string-cardinality") << "Number of strings with length equal to " << lr << " is " << it->second.size() << std::endl;
+		// size > c^k
+		double k = std::log( it->second.size() ) / log((double) cardinality);
+		unsigned int int_k = (unsigned int)k;
+		Node k_node = NodeManager::currentNM()->mkConst( ::CVC4::Rational( int_k ) );
+		//double c_k = pow ( (double)cardinality, (double)lr );
+		if( it->second.size() > 1 ) {
+			bool allDisequal = true;
+			for( std::vector< Node >::iterator itr1 = it->second.begin();
+			      itr1 != it->second.end(); ++itr1) {
+				for( std::vector< Node >::iterator itr2 = itr1 + 1;
+					  itr2 != it->second.end(); ++itr2) {
+					if(!d_equalityEngine.areDisequal( *itr1, *itr2, false )) {
+						allDisequal = false;
+						// add split lemma
+						Node eq = NodeManager::currentNM()->mkNode( kind::EQUAL, *itr1, *itr2 );
+						Node neq = NodeManager::currentNM()->mkNode( kind::NOT, eq );
+						Node lemma_or = NodeManager::currentNM()->mkNode( kind::OR, eq, neq );
+						Trace("strings-lemma") << "Strings split lemma : " << lemma_or << std::endl;
+						d_out->lemma(lemma_or);
+					}
+			    }
+		    }
+			if(allDisequal) {
+				EqcInfo* ei = getOrMakeEqcInfo( lr, true );
+				Trace("string-cardinality") << "Previous cardinality used for " << lr << " is " << ei->d_cardinality_lem_k << std::endl;
+				if( int_k > ei->d_cardinality_lem_k.get() ){
+					//add cardinality lemma
+					Node dist = NodeManager::currentNM()->mkNode( kind::DISTINCT, it->second );
+					std::vector< Node > vec_node;
+					vec_node.push_back( dist );
+					for( std::vector< Node >::iterator itr1 = it->second.begin();
+						  itr1 != it->second.end(); ++itr1) {
+						Node len = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, *itr1 );
+						if( len!=lr ){
+						  Node len_eq_lr = NodeManager::currentNM()->mkNode( kind::EQUAL, lr, len );
+						  vec_node.push_back( len_eq_lr );
+						}
+					}
+					Node antc = NodeManager::currentNM()->mkNode( kind::AND, vec_node );
+					Node len = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, it->second[0] );
+					Node cons = NodeManager::currentNM()->mkNode( kind::GT, len, k_node );
+					Node lemma = NodeManager::currentNM()->mkNode( kind::IMPLIES, antc, cons );
+					Trace("strings-lemma") << "Strings cardinaliry lemma : " << lemma << std::endl;
+					d_out->lemma(lemma);
+					ei->d_cardinality_lem_k.set( k );
+				}
+			}
+		}
+	  }
+  }
   }
 }
 
-TheoryStrings::EqcInfo::EqcInfo(  context::Context* c ) : d_length_term(c) {
+TheoryStrings::EqcInfo::EqcInfo(  context::Context* c ) : d_length_term(c), d_cardinality_lem_k(c) {
 
 }
 
@@ -589,14 +675,14 @@ void TheoryStrings::normalizeEquivalenceClass( Node eqc, std::vector< Node > & v
 									Node other_str = normal_forms[i][index_i].getKind() == kind::CONST_STRING ? normal_forms[j][index_j] : normal_forms[i][index_i];
 									if( other_str.getKind() == kind::CONST_STRING ) {
 										unsigned len_short = const_str.getConst<String>().size() <= other_str.getConst<String>().size() ? const_str.getConst<String>().size() : other_str.getConst<String>().size();
-										if(strncmp(const_str.getConst<String>().c_str(), other_str.getConst<String>().c_str(), len_short) == 0) {
+										if( const_str.getConst<String>().strncmp(other_str.getConst<String>(), len_short) ) {
 											//same prefix
 											//k is the index of the string that is shorter
 											int k = const_str.getConst<String>().size()<other_str.getConst<String>().size() ? i : j;
 											int index_k = const_str.getConst<String>().size()<other_str.getConst<String>().size() ? index_i : index_j;
 											int l = const_str.getConst<String>().size()<other_str.getConst<String>().size() ? j : i;
 											int index_l = const_str.getConst<String>().size()<other_str.getConst<String>().size() ? index_j : index_i;
-											Node remainderStr = NodeManager::currentNM()->mkConst( ::CVC4::String(const_str.getConst<String>().substr(len_short) ) );
+											Node remainderStr = NodeManager::currentNM()->mkConst( const_str.getConst<String>().substr(len_short) );
 											Trace("strings-solve-debug") << "Break normal form of " << normal_forms[l][index_l] << " into " << normal_forms[k][index_k] << ", " << remainderStr << std::endl;
 											normal_forms[l].insert( normal_forms[l].begin()+index_l + 1, remainderStr );
 											normal_forms[l][index_l] = normal_forms[k][index_k];
@@ -609,7 +695,7 @@ void TheoryStrings::normalizeEquivalenceClass( Node eqc, std::vector< Node > & v
 									} else {
 										Assert( other_str.getKind()!=kind::STRING_CONCAT ); 
 										Node firstChar = const_str.getConst<String>().size() == 1 ? const_str :
-											NodeManager::currentNM()->mkConst( ::CVC4::String(const_str.getConst<String>().substr(0, 1) ) );
+											NodeManager::currentNM()->mkConst( const_str.getConst<String>().substr(0, 1) );
 										//split the string
 										Node sk = NodeManager::currentNM()->mkSkolem( "ssym_$$", normal_forms[i][index_i].getType(), "created for split" );
 										// |sk| >= 0

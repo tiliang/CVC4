@@ -16,6 +16,13 @@ operator STRING_IN_REGEXP 2 "membership"
 
 operator STRING_LENGTH 1 "string length"
 
+#sort CHAR_TYPE \
+#    Cardinality::INTEGERS \
+ #   well-founded \
+#        "NodeManager::currentNM()->mkConst(::CVC4::String())" \
+ #       "util/regexp.h" \
+ #   "String type" 
+
 sort STRING_TYPE \
     Cardinality::INTEGERS \
     well-founded \
