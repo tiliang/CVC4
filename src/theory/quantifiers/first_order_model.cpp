@@ -553,6 +553,14 @@ Node FirstOrderModelFmc::getCurrentUfModelValue( Node n, std::vector< Node > & a
 }
 
 void FirstOrderModelFmc::processInitialize() {
+  if( options::fmfFmcInterval() && intervalOp.isNull() ){
+    std::vector< TypeNode > types;
+    for(unsigned i=0; i<2; i++){
+      types.push_back(NodeManager::currentNM()->integerType());
+    }
+    TypeNode typ = NodeManager::currentNM()->mkFunctionType( types, NodeManager::currentNM()->integerType() );
+    intervalOp = NodeManager::currentNM()->mkSkolem( "interval_$$", typ, "op representing interval" );
+  }
   for( std::map<Node, Def * >::iterator it = d_models.begin(); it != d_models.end(); ++it ){
     it->second->reset();
   }
@@ -593,6 +601,14 @@ Node FirstOrderModelFmc::getStar(TypeNode tn) {
   return d_type_star[tn];
 }
 
+Node FirstOrderModelFmc::getStarElement(TypeNode tn) {
+  Node st = getStar(tn);
+  if( options::fmfFmcInterval() && tn.isInteger() ){
+    st = getInterval( st, st );
+  }
+  return st;
+}
+
 bool FirstOrderModelFmc::isModelBasisTerm(Node n) {
   return n==getModelBasisTerm(n.getType());
 }
@@ -614,7 +630,7 @@ Node FirstOrderModelFmc::getFunctionValue(Node op, const char* argPrefix ) {
   Node boundVarList = NodeManager::currentNM()->mkNode(kind::BOUND_VAR_LIST, vars);
   Node curr;
   for( int i=(d_models[op]->d_cond.size()-1); i>=0; i--) {
-    Node v = getUsedRepresentative( d_models[op]->d_value[i] );
+    Node v = getRepresentative( d_models[op]->d_value[i] );
     if( curr.isNull() ){
       curr = v;
     }else{
@@ -622,7 +638,14 @@ Node FirstOrderModelFmc::getFunctionValue(Node op, const char* argPrefix ) {
       Node cond = d_models[op]->d_cond[i];
       std::vector< Node > children;
       for( unsigned j=0; j<cond.getNumChildren(); j++) {
-        if (!isStar(cond[j])){
+        if (isInterval(cond[j])){
+          if( !isStar(cond[j][0]) ){
+            children.push_back( NodeManager::currentNM()->mkNode( GEQ, vars[j], cond[j][0] ) );
+          }
+          if( !isStar(cond[j][1]) ){
+            children.push_back( NodeManager::currentNM()->mkNode( LT, vars[j], cond[j][1] ) );
+          }
+        }else if (!isStar(cond[j])){
           Node c = getUsedRepresentative( cond[j] );
           children.push_back( NodeManager::currentNM()->mkNode( EQUAL, vars[j], c ) );
         }
@@ -634,4 +657,24 @@ Node FirstOrderModelFmc::getFunctionValue(Node op, const char* argPrefix ) {
   }
   curr = Rewriter::rewrite( curr );
   return NodeManager::currentNM()->mkNode(kind::LAMBDA, boundVarList, curr);
+}
+
+bool FirstOrderModelFmc::isInterval(Node n) {
+  return n.getKind()==APPLY_UF && n.getOperator()==intervalOp;
+}
+
+Node FirstOrderModelFmc::getInterval( Node lb, Node ub ){
+  return NodeManager::currentNM()->mkNode( APPLY_UF, intervalOp, lb, ub );
+}
+
+bool FirstOrderModelFmc::isInRange( Node v, Node i ) {
+  for( unsigned b=0; b<2; b++ ){
+    if( !isStar( i[b] ) ){
+      if( ( b==0 && i[b].getConst<Rational>() > v.getConst<Rational>() ) ||
+          ( b==1 && i[b].getConst<Rational>() <= v.getConst<Rational>() ) ){
+        return false;
+      }
+    }
+  }
+  return true;
 }

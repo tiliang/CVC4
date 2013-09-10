@@ -131,6 +131,11 @@ class TheoryStrings : public Theory {
   bool isNormalFormPair( Node n1, Node n2 );
   bool isNormalFormPair2( Node n1, Node n2 );
 
+  NodeListMap d_ind_map1;
+  NodeListMap d_ind_map2;
+  NodeListMap d_ind_map_exp;
+  void addInductiveEquation( Node x, Node y, Node z, Node exp );
+
   /////////////////////////////////////////////////////////////////////////////
   // MODEL GENERATION
   /////////////////////////////////////////////////////////////////////////////
@@ -196,6 +201,11 @@ protected:
 
   //do pending merges
   void doPendingFacts();
+
+  /** mkConcat **/
+  Node mkConcat( std::vector< Node >& c );
+  /** mkExplain **/
+  Node mkExplain( std::vector< Node >& a, std::vector< Node >& an );
 };/* class TheoryStrings */
 
 }/* CVC4::theory::strings namespace */

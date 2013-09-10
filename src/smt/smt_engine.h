@@ -234,6 +234,16 @@ class CVC4_PUBLIC SmtEngine {
   Result d_status;
 
   /**
+   * The name of the input (if any).
+   */
+  std::string d_filename;
+
+  /**
+   * Verbosity of various commands.
+   */
+  std::map<std::string, Integer> d_commandVerbosity;
+
+  /**
    * A private utility class to SmtEngine.
    */
   smt::SmtEnginePrivate* d_private;
@@ -249,7 +259,7 @@ class CVC4_PUBLIC SmtEngine {
    * like turning datatypes back into tuples, length-1-bitvectors back
    * into booleans, etc.
    */
-  Node postprocess(TNode n, TypeNode expectedType);
+  Node postprocess(TNode n, TypeNode expectedType) const;
 
   /**
    * This is something of an "init" procedure, but is idempotent; call
@@ -326,7 +336,7 @@ class CVC4_PUBLIC SmtEngine {
    * Add to Model command.  This is used for recording a command
    * that should be reported during a get-model call.
    */
-  void addToModelCommandAndDump(const Command& c, bool isGlobal = false, bool userVisible = true, const char* dumpTag = "declarations");
+  void addToModelCommandAndDump(const Command& c, uint32_t flags = 0, bool userVisible = true, const char* dumpTag = "declarations");
 
   /**
    * Get the model (only if immediately preceded by a SAT
@@ -444,7 +454,7 @@ public:
    * by a SAT or INVALID query).  Only permitted if the SmtEngine is
    * set to operate interactively and produce-models is on.
    */
-  Expr getValue(const Expr& e) throw(ModalException, TypeCheckingException, LogicException);
+  Expr getValue(const Expr& e) const throw(ModalException, TypeCheckingException, LogicException);
 
   /**
    * Add a function to the set of expressions whose value is to be

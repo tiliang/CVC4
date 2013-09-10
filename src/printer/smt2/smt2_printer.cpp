@@ -172,6 +172,12 @@ void Smt2Printer::toStream(std::ostream& out, TNode n,
       break;
     }
 
+    case kind::STORE_ALL: {
+      ArrayStoreAll asa = n.getConst<ArrayStoreAll>();
+      out << "(__array_store_all__ " << asa.getType() << " " << asa.getExpr() << ")";
+      break;
+    }
+
     case kind::SUBRANGE_TYPE: {
       const SubrangeBounds& bounds = n.getConst<SubrangeBounds>();
       // No way to represent subranges in SMT-LIBv2; this is inspired
@@ -250,7 +256,16 @@ void Smt2Printer::toStream(std::ostream& out, TNode n,
   case kind::INTS_DIVISION:
   case kind::INTS_DIVISION_TOTAL:
   case kind::INTS_MODULUS:
-  case kind::INTS_MODULUS_TOTAL: out << smtKindString(k) << " "; break;
+  case kind::INTS_MODULUS_TOTAL:
+  case kind::ABS:
+  case kind::IS_INTEGER:
+  case kind::TO_INTEGER:
+  case kind::TO_REAL: out << smtKindString(k) << " "; break;
+
+  case kind::DIVISIBLE:
+    out << "(_ divisible " << n.getOperator().getConst<Divisible>().k << ")";
+    stillNeedToPrintParams = false;
+    break;
 
     // arrays theory
   case kind::SELECT:
@@ -432,14 +447,19 @@ static string smtKindString(Kind k) throw() {
   case kind::GEQ: return ">=";
   case kind::DIVISION:
   case kind::DIVISION_TOTAL: return "/";
-  case kind::INTS_DIVISION:
-  case kind::INTS_DIVISION_TOTAL: return "div";
-  case kind::INTS_MODULUS:
-  case kind::INTS_MODULUS_TOTAL: return "mod";
+  case kind::INTS_DIVISION: return "div";
+  case kind::INTS_DIVISION_TOTAL: return "INTS_DIVISION_TOTAL";
+  case kind::INTS_MODULUS: return "mod";
+  case kind::INTS_MODULUS_TOTAL: return "INTS_MODULUS_TOTAL";
+  case kind::ABS: return "abs";
+  case kind::IS_INTEGER: return "is_int";
+  case kind::TO_INTEGER: return "to_int";
+  case kind::TO_REAL: return "to_real";
 
     // arrays theory
   case kind::SELECT: return "select";
   case kind::STORE: return "store";
+  case kind::STORE_ALL: return "__array_store_all__";
   case kind::ARRAY_TYPE: return "Array";
 
     // bv theory
@@ -536,6 +556,7 @@ void Smt2Printer::toStream(std::ostream& out, const Command* c,
      tryToStream<CheckSatCommand>(out, c) ||
      tryToStream<QueryCommand>(out, c) ||
      tryToStream<QuitCommand>(out, c) ||
+     tryToStream<DeclarationSequence>(out, c) ||
      tryToStream<CommandSequence>(out, c) ||
      tryToStream<DeclareFunctionCommand>(out, c) ||
      tryToStream<DeclareTypeCommand>(out, c) ||
@@ -586,15 +607,15 @@ void Smt2Printer::toStream(std::ostream& out, const CommandStatus* s) const thro
 }/* Smt2Printer::toStream(CommandStatus*) */
 
 
-void Smt2Printer::toStream(std::ostream& out, Model& m) const throw() {
+void Smt2Printer::toStream(std::ostream& out, const Model& m) const throw() {
   out << "(model" << std::endl;
   this->Printer::toStream(out, m);
   out << ")" << std::endl;
 }
 
 
-void Smt2Printer::toStream(std::ostream& out, Model& m, const Command* c) const throw() {
-  theory::TheoryModel& tm = (theory::TheoryModel&) m;
+void Smt2Printer::toStream(std::ostream& out, const Model& m, const Command* c) const throw() {
+  const theory::TheoryModel& tm = (const theory::TheoryModel&) m;
   if(dynamic_cast<const DeclareTypeCommand*>(c) != NULL) {
     TypeNode tn = TypeNode::fromType( ((const DeclareTypeCommand*)c)->getType() );
     if( options::modelUninterpDtEnum() && tn.isSort() &&
@@ -676,7 +697,7 @@ void Smt2Printer::toStream(std::ostream& out, Model& m, const Command* c) const 
 }
 
 void Smt2Printer::toStream(std::ostream& out, const Result& r) const throw() {
-  if (r.getType() == Result::TYPE_SAT && r.isSat() == Result::SAT_UNKNOWN) {
+  if(r.getType() == Result::TYPE_SAT && r.isSat() == Result::SAT_UNKNOWN) {
     out << "unknown";
   } else {
     Printer::toStream(out, r);
@@ -750,15 +771,26 @@ static void toStream(std::ostream& out, const DeclareFunctionCommand* c) throw()
 
 static void toStream(std::ostream& out, const DefineFunctionCommand* c) throw() {
   Expr func = c->getFunction();
-  const vector<Expr>& formals = c->getFormals();
+  const vector<Expr>* formals = &c->getFormals();
   out << "(define-fun " << func << " (";
   Type type = func.getType();
+  Expr formula = c->getFormula();
   if(type.isFunction()) {
-    vector<Expr>::const_iterator i = formals.begin();
+    vector<Expr> f;
+    if(formals->empty()) {
+      const vector<Type>& params = FunctionType(type).getArgTypes();
+      for(vector<Type>::const_iterator j = params.begin(); j != params.end(); ++j) {
+        f.push_back(NodeManager::currentNM()->mkSkolem("a", TypeNode::fromType(*j), "",
+                                                       NodeManager::SKOLEM_NO_NOTIFY).toExpr());
+      }
+      formula = NodeManager::currentNM()->toExprManager()->mkExpr(kind::APPLY_UF, formula, f);
+      formals = &f;
+    }
+    vector<Expr>::const_iterator i = formals->begin();
     for(;;) {
       out << "(" << (*i) << " " << (*i).getType() << ")";
       ++i;
-      if(i != formals.end()) {
+      if(i != formals->end()) {
         out << " ";
       } else {
         break;
@@ -766,7 +798,6 @@ static void toStream(std::ostream& out, const DefineFunctionCommand* c) throw() 
     }
     type = FunctionType(type).getRangeType();
   }
-  Expr formula = c->getFormula();
   out << ") " << type << " " << formula << ")";
 }
 

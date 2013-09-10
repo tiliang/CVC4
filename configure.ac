@@ -786,6 +786,9 @@ AC_DEFINE_UNQUOTED(CVC4_GCC_HAS_PB_DS_BUG, ${CVC4_GCC_HAS_PB_DS_BUG}, [Whether l
 AC_PROG_ANTLR
 
 CVC4_CXX_OPTION([-Werror], [WERROR])
+CVC4_C_OPTION([-Werror], [C_WERROR])
+CVC4_CXX_OPTION([-Wno-deprecated], [WNO_DEPRECATED])
+CVC4_C_OPTION([-Wno-deprecated], [C_WNO_DEPRECATED])
 CVC4_CXX_OPTION([-Wno-conversion-null], [WNO_CONVERSION_NULL])
 CVC4_CXX_OPTION([-Wno-tautological-compare], [WNO_TAUTOLOGICAL_COMPARE])
 CVC4_CXX_OPTION([-Wno-parentheses], [WNO_PARENTHESES])
@@ -976,6 +979,11 @@ AC_CHECK_HEADERS([getopt.h unistd.h])
 #AC_TYPE_UINT64_T
 #AC_TYPE_SIZE_T
 
+# guard against double-inclusion of the autoheader
+AH_TOP([#ifndef __CVC4__CVC4AUTOCONFIG_H
+#define __CVC4__CVC4AUTOCONFIG_H])
+AH_BOTTOM([#endif /* __CVC4__CVC4AUTOCONFIG_H */])
+
 AC_CHECK_DECLS([optreset], [], [], [#include <getopt.h>])
 
 # check with which standard strerror_r() complies
@@ -1032,8 +1040,8 @@ cvc4_rlcheck_save_CXXFLAGS="$CXXFLAGS"
 cvc4_rlcheck_save_CFLAGS="$CFLAGS"
 cvc4_rlcheck_save_LDFLAGS="$LDFLAGS"
 CPPFLAGS="${CPPFLAGS:+$CPPFLAGS }${BOOST_CPPFLAGS:+$BOOST_CPPFLAGS }$CVC4CPPFLAGS"
-CXXFLAGS="${CXXFLAGS:+$CXXFLAGS }$CVC4CXXFLAGS -Wno-deprecated"
-CFLAGS="${CFLAGS:+$CFLAGS }$CVC4CFLAGS -Wno-deprecated -fexceptions"
+CXXFLAGS="${CXXFLAGS:+$CXXFLAGS }$CVC4CXXFLAGS $WNO_DEPRECATED"
+CFLAGS="${CFLAGS:+$CFLAGS }$CVC4CFLAGS $C_WNO_DEPRECATED -fexceptions"
 LDFLAGS="${LDFLAGS:+$LDFLAGS }$CVC4LDFLAGS"
 CVC4_CHECK_FOR_READLINE
 CPPFLAGS="$cvc4_rlcheck_save_CPPFLAGS"

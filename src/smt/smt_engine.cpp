@@ -419,11 +419,13 @@ public:
     d_smt.d_nodeManager->unsubscribeEvents(this);
   }
 
-  void nmNotifyNewSort(TypeNode tn) {
+  void nmNotifyNewSort(TypeNode tn, uint32_t flags) {
     DeclareTypeCommand c(tn.getAttribute(expr::VarNameAttr()),
                          0,
                          tn.toType());
-    d_smt.addToModelCommandAndDump(c);
+    if((flags & ExprManager::SORT_FLAG_PLACEHOLDER) == 0) {
+      d_smt.addToModelCommandAndDump(c, flags);
+    }
   }
 
   void nmNotifyNewSortConstructor(TypeNode tn) {
@@ -438,17 +440,19 @@ public:
     d_smt.addToModelCommandAndDump(c);
   }
 
-  void nmNotifyNewVar(TNode n, bool isGlobal) {
+  void nmNotifyNewVar(TNode n, uint32_t flags) {
     DeclareFunctionCommand c(n.getAttribute(expr::VarNameAttr()),
                              n.toExpr(),
                              n.getType().toType());
-    d_smt.addToModelCommandAndDump(c, isGlobal);
+    if((flags & ExprManager::VAR_FLAG_DEFINED) == 0) {
+      d_smt.addToModelCommandAndDump(c, flags);
+    }
     if(n.getType().isBoolean() && !options::incrementalSolving()) {
       d_boolVars.push_back(n);
     }
   }
 
-  void nmNotifyNewSkolem(TNode n, const std::string& comment, bool isGlobal) {
+  void nmNotifyNewSkolem(TNode n, const std::string& comment, uint32_t flags) {
     string id = n.getAttribute(expr::VarNameAttr());
     DeclareFunctionCommand c(id,
                              n.toExpr(),
@@ -456,7 +460,9 @@ public:
     if(Dump.isOn("skolems") && comment != "") {
       Dump("skolems") << CommentCommand(id + " is " + comment);
     }
-    d_smt.addToModelCommandAndDump(c, isGlobal, false, "skolems");
+    if((flags & ExprManager::VAR_FLAG_DEFINED) == 0) {
+      d_smt.addToModelCommandAndDump(c, flags, false, "skolems");
+    }
     if(n.getType().isBoolean() && !options::incrementalSolving()) {
       d_boolVars.push_back(n);
     }
@@ -792,6 +798,9 @@ SmtEngine::~SmtEngine() throw() {
 
 void SmtEngine::setLogic(const LogicInfo& logic) throw(ModalException) {
   SmtScope smts(this);
+  if(d_fullyInited) {
+    throw ModalException("Cannot set logic in SmtEngine after the engine has finished initializing");
+  }
   d_logic = logic;
   setLogicInternal();
 }
@@ -1105,12 +1114,14 @@ void SmtEngine::setInfo(const std::string& key, const CVC4::SExpr& value)
   }
 
   // Check for standard info keys (SMT-LIB v1, SMT-LIB v2, ...)
-  if(key == "name" ||
-     key == "source" ||
+  if(key == "source" ||
      key == "category" ||
      key == "difficulty" ||
      key == "notes") {
     // ignore these
+    return;
+  } else if(key == "name") {
+    d_filename = value.getValue();
     return;
   } else if(key == "smt-lib-version") {
     if( (value.isInteger() && value.getIntegerValue() == Integer(2)) ||
@@ -1130,7 +1141,7 @@ void SmtEngine::setInfo(const std::string& key, const CVC4::SExpr& value)
       throw OptionException("argument to (set-info :status ..) must be "
                             "`sat' or `unsat' or `unknown'");
     }
-    d_status = Result(s);
+    d_status = Result(s, d_filename);
     return;
   }
   throw UnrecognizedOptionException();
@@ -1163,7 +1174,7 @@ CVC4::SExpr SmtEngine::getInfo(const std::string& key) const
     return stats;
   } else if(key == "error-behavior") {
     // immediate-exit | continued-execution
-    return SExpr::Keyword("immediate-exit");
+    return SExpr::Keyword("continued-execution");
   } else if(key == "name") {
     return Configuration::getName();
   } else if(key == "version") {
@@ -1191,6 +1202,9 @@ CVC4::SExpr SmtEngine::getInfo(const std::string& key) const
       throw ModalException("Can't get-info :reason-unknown when the "
                            "last result wasn't unknown!");
     }
+  } else if(key == "all-options") {
+    // get the options, like all-statistics
+    return Options::current().getOptions();
   } else {
     throw UnrecognizedOptionException();
   }
@@ -1210,13 +1224,13 @@ void SmtEngine::defineFunction(Expr func,
       throw TypeCheckingException(func, ss.str());
     }
   }
-  if(Dump.isOn("declarations")) {
-    stringstream ss;
-    ss << Expr::setlanguage(Expr::setlanguage::getLanguage(Dump.getStream()))
-       << func;
-    DefineFunctionCommand c(ss.str(), func, formals, formula);
-    addToModelCommandAndDump(c, false, true, "declarations");
-  }
+
+  stringstream ss;
+  ss << Expr::setlanguage(Expr::setlanguage::getLanguage(Dump.getStream()))
+     << func;
+  DefineFunctionCommand c(ss.str(), func, formals, formula);
+  addToModelCommandAndDump(c, ExprManager::VAR_FLAG_NONE, true, "declarations");
+
   SmtScope smts(this);
 
   // Substitute out any abstract values in formula
@@ -1325,171 +1339,210 @@ Node SmtEnginePrivate::expandBVDivByZero(TNode n) {
 Node SmtEnginePrivate::expandDefinitions(TNode n, hash_map<Node, Node, NodeHashFunction>& cache)
   throw(TypeCheckingException, LogicException) {
 
-  Kind k = n.getKind();
+  stack< triple<Node, Node, bool> > worklist;
+  stack<Node> result;
+  worklist.push(make_triple(Node(n), Node(n), false));
 
-  if(k != kind::APPLY && n.getNumChildren() == 0) {
-    SmtEngine::DefinedFunctionMap::const_iterator i = d_smt.d_definedFunctions->find(n);
-    if(i != d_smt.d_definedFunctions->end()) {
-      // replacement must be closed
-      if((*i).second.getFormals().size() > 0) {
-        return d_smt.d_nodeManager->mkNode(kind::LAMBDA, d_smt.d_nodeManager->mkNode(kind::BOUND_VAR_LIST, (*i).second.getFormals()), (*i).second.getFormula());
+  do {
+    n = worklist.top().first;
+    Node node = worklist.top().second;
+    bool childrenPushed = worklist.top().third;
+    worklist.pop();
+
+    if(!childrenPushed) {
+      Kind k = n.getKind();
+
+      if(k != kind::APPLY && n.getNumChildren() == 0) {
+	SmtEngine::DefinedFunctionMap::const_iterator i = d_smt.d_definedFunctions->find(n);
+	if(i != d_smt.d_definedFunctions->end()) {
+	  // replacement must be closed
+	  if((*i).second.getFormals().size() > 0) {
+	    result.push(d_smt.d_nodeManager->mkNode(kind::LAMBDA, d_smt.d_nodeManager->mkNode(kind::BOUND_VAR_LIST, (*i).second.getFormals()), (*i).second.getFormula()));
+	    continue;
+	  }
+	  // don't bother putting in the cache
+	  result.push((*i).second.getFormula());
+	  continue;
+	}
+	// don't bother putting in the cache
+	result.push(n);
+	continue;
       }
-      // don't bother putting in the cache
-      return (*i).second.getFormula();
-    }
-    // don't bother putting in the cache
-    return n;
-  }
 
-  // maybe it's in the cache
-  hash_map<Node, Node, NodeHashFunction>::iterator cacheHit = cache.find(n);
-  if(cacheHit != cache.end()) {
-    TNode ret = (*cacheHit).second;
-    return ret.isNull() ? n : ret;
-  }
-
-  // otherwise expand it
-
-  Node node = n;
-  NodeManager* nm = d_smt.d_nodeManager;
-  // FIXME: this theory specific code should be factored out of the SmtEngine, somehow
-  switch(k) {
-  case kind::BITVECTOR_SDIV:
-  case kind::BITVECTOR_SREM:
-  case kind::BITVECTOR_SMOD: {
-    node = bv::TheoryBVRewriter::eliminateBVSDiv(node);
-    break;
-  }
-
-  case kind::BITVECTOR_UDIV:
-  case kind::BITVECTOR_UREM: {
-    node = expandBVDivByZero(node);
-    break;
-  }
-  case kind::DIVISION: {
-    // partial function: division
-    if(d_divByZero.isNull()) {
-      d_divByZero = nm->mkSkolem("divByZero", nm->mkFunctionType(nm->realType(), nm->realType()),
-                                 "partial real division", NodeManager::SKOLEM_EXACT_NAME);
-      if(!d_smt.d_logic.isTheoryEnabled(THEORY_UF)) {
-        d_smt.d_logic = d_smt.d_logic.getUnlockedCopy();
-        d_smt.d_logic.enableTheory(THEORY_UF);
-        d_smt.d_logic.lock();
+      // maybe it's in the cache
+      hash_map<Node, Node, NodeHashFunction>::iterator cacheHit = cache.find(n);
+      if(cacheHit != cache.end()) {
+        TNode ret = (*cacheHit).second;
+        result.push(ret.isNull() ? n : ret);
+        continue;
       }
-    }
-    TNode num = n[0], den = n[1];
-    Node den_eq_0 = nm->mkNode(kind::EQUAL, den, nm->mkConst(Rational(0)));
-    Node divByZeroNum = nm->mkNode(kind::APPLY_UF, d_divByZero, num);
-    Node divTotalNumDen = nm->mkNode(kind::DIVISION_TOTAL, num, den);
-    node = nm->mkNode(kind::ITE, den_eq_0, divByZeroNum, divTotalNumDen);
-    break;
-  }
 
-  case kind::INTS_DIVISION: {
-    // partial function: integer div
-    if(d_intDivByZero.isNull()) {
-      d_intDivByZero = nm->mkSkolem("intDivByZero", nm->mkFunctionType(nm->integerType(), nm->integerType()),
-                                    "partial integer division", NodeManager::SKOLEM_EXACT_NAME);
-      if(!d_smt.d_logic.isTheoryEnabled(THEORY_UF)) {
-        d_smt.d_logic = d_smt.d_logic.getUnlockedCopy();
-        d_smt.d_logic.enableTheory(THEORY_UF);
-        d_smt.d_logic.lock();
+      // otherwise expand it
+
+      NodeManager* nm = d_smt.d_nodeManager;
+      // FIXME: this theory specific code should be factored out of the SmtEngine, somehow
+      switch(k) {
+      case kind::BITVECTOR_SDIV:
+      case kind::BITVECTOR_SREM:
+      case kind::BITVECTOR_SMOD: {
+        node = bv::TheoryBVRewriter::eliminateBVSDiv(node);
+        break;
       }
-    }
-    TNode num = n[0], den = n[1];
-    Node den_eq_0 = nm->mkNode(kind::EQUAL, den, nm->mkConst(Rational(0)));
-    Node intDivByZeroNum = nm->mkNode(kind::APPLY_UF, d_intDivByZero, num);
-    Node intDivTotalNumDen = nm->mkNode(kind::INTS_DIVISION_TOTAL, num, den);
-    node = nm->mkNode(kind::ITE, den_eq_0, intDivByZeroNum, intDivTotalNumDen);
-    break;
-  }
 
-  case kind::INTS_MODULUS: {
-    // partial function: mod
-    if(d_modZero.isNull()) {
-      d_modZero = nm->mkSkolem("modZero", nm->mkFunctionType(nm->integerType(), nm->integerType()),
-                               "partial modulus", NodeManager::SKOLEM_EXACT_NAME);
-      if(!d_smt.d_logic.isTheoryEnabled(THEORY_UF)) {
-        d_smt.d_logic = d_smt.d_logic.getUnlockedCopy();
-        d_smt.d_logic.enableTheory(THEORY_UF);
-        d_smt.d_logic.lock();
+      case kind::BITVECTOR_UDIV:
+      case kind::BITVECTOR_UREM: {
+        node = expandBVDivByZero(node);
+        break;
       }
-    }
-    TNode num = n[0], den = n[1];
-    Node den_eq_0 = nm->mkNode(kind::EQUAL, den, nm->mkConst(Rational(0)));
-    Node modZeroNum = nm->mkNode(kind::APPLY_UF, d_modZero, num);
-    Node modTotalNumDen = nm->mkNode(kind::INTS_MODULUS_TOTAL, num, den);
-    node = nm->mkNode(kind::ITE, den_eq_0, modZeroNum, modTotalNumDen);
-    break;
-  }
 
-  case kind::APPLY: {
-    // application of a user-defined symbol
-    TNode func = n.getOperator();
-    SmtEngine::DefinedFunctionMap::const_iterator i =
-      d_smt.d_definedFunctions->find(func);
-    DefinedFunction def = (*i).second;
-    vector<Node> formals = def.getFormals();
-
-    if(Debug.isOn("expand")) {
-      Debug("expand") << "found: " << n << endl;
-      Debug("expand") << " func: " << func << endl;
-      string name = func.getAttribute(expr::VarNameAttr());
-      Debug("expand") << "     : \"" << name << "\"" << endl;
-    }
-    if(i == d_smt.d_definedFunctions->end()) {
-      throw TypeCheckingException(n.toExpr(), string("Undefined function: `") + func.toString() + "'");
-    }
-    if(Debug.isOn("expand")) {
-      Debug("expand") << " defn: " << def.getFunction() << endl
-                      << "       [";
-      if(formals.size() > 0) {
-        copy( formals.begin(), formals.end() - 1,
-              ostream_iterator<Node>(Debug("expand"), ", ") );
-        Debug("expand") << formals.back();
+      case kind::DIVISION: {
+        // partial function: division
+        if(d_divByZero.isNull()) {
+          d_divByZero = nm->mkSkolem("divByZero", nm->mkFunctionType(nm->realType(), nm->realType()),
+                                     "partial real division", NodeManager::SKOLEM_EXACT_NAME);
+          if(!d_smt.d_logic.isTheoryEnabled(THEORY_UF)) {
+            d_smt.d_logic = d_smt.d_logic.getUnlockedCopy();
+            d_smt.d_logic.enableTheory(THEORY_UF);
+            d_smt.d_logic.lock();
+          }
+        }
+        TNode num = n[0], den = n[1];
+        Node den_eq_0 = nm->mkNode(kind::EQUAL, den, nm->mkConst(Rational(0)));
+        Node divByZeroNum = nm->mkNode(kind::APPLY_UF, d_divByZero, num);
+        Node divTotalNumDen = nm->mkNode(kind::DIVISION_TOTAL, num, den);
+        node = nm->mkNode(kind::ITE, den_eq_0, divByZeroNum, divTotalNumDen);
+        break;
       }
-      Debug("expand") << "]" << endl
-                      << "       " << def.getFunction().getType() << endl
-                      << "       " << def.getFormula() << endl;
+
+      case kind::INTS_DIVISION: {
+        // partial function: integer div
+        if(d_intDivByZero.isNull()) {
+          d_intDivByZero = nm->mkSkolem("intDivByZero", nm->mkFunctionType(nm->integerType(), nm->integerType()),
+                                        "partial integer division", NodeManager::SKOLEM_EXACT_NAME);
+          if(!d_smt.d_logic.isTheoryEnabled(THEORY_UF)) {
+            d_smt.d_logic = d_smt.d_logic.getUnlockedCopy();
+            d_smt.d_logic.enableTheory(THEORY_UF);
+            d_smt.d_logic.lock();
+          }
+        }
+        TNode num = n[0], den = n[1];
+        Node den_eq_0 = nm->mkNode(kind::EQUAL, den, nm->mkConst(Rational(0)));
+        Node intDivByZeroNum = nm->mkNode(kind::APPLY_UF, d_intDivByZero, num);
+        Node intDivTotalNumDen = nm->mkNode(kind::INTS_DIVISION_TOTAL, num, den);
+        node = nm->mkNode(kind::ITE, den_eq_0, intDivByZeroNum, intDivTotalNumDen);
+        break;
+      }
+
+      case kind::INTS_MODULUS: {
+        // partial function: mod
+        if(d_modZero.isNull()) {
+          d_modZero = nm->mkSkolem("modZero", nm->mkFunctionType(nm->integerType(), nm->integerType()),
+                                   "partial modulus", NodeManager::SKOLEM_EXACT_NAME);
+          if(!d_smt.d_logic.isTheoryEnabled(THEORY_UF)) {
+            d_smt.d_logic = d_smt.d_logic.getUnlockedCopy();
+            d_smt.d_logic.enableTheory(THEORY_UF);
+            d_smt.d_logic.lock();
+          }
+        }
+        TNode num = n[0], den = n[1];
+        Node den_eq_0 = nm->mkNode(kind::EQUAL, den, nm->mkConst(Rational(0)));
+        Node modZeroNum = nm->mkNode(kind::APPLY_UF, d_modZero, num);
+        Node modTotalNumDen = nm->mkNode(kind::INTS_MODULUS_TOTAL, num, den);
+        node = nm->mkNode(kind::ITE, den_eq_0, modZeroNum, modTotalNumDen);
+        break;
+      }
+
+      case kind::ABS: {
+        Node out = nm->mkNode(kind::ITE, nm->mkNode(kind::LT, node[0], nm->mkConst(Rational(0))), nm->mkNode(kind::UMINUS, node[0]), node[0]);
+        cache[n] = out;
+        result.push(out);
+        continue;
+      }
+
+      case kind::APPLY: {
+        // application of a user-defined symbol
+        TNode func = n.getOperator();
+        SmtEngine::DefinedFunctionMap::const_iterator i =
+          d_smt.d_definedFunctions->find(func);
+        DefinedFunction def = (*i).second;
+        vector<Node> formals = def.getFormals();
+
+        if(Debug.isOn("expand")) {
+          Debug("expand") << "found: " << n << endl;
+          Debug("expand") << " func: " << func << endl;
+          string name = func.getAttribute(expr::VarNameAttr());
+          Debug("expand") << "     : \"" << name << "\"" << endl;
+        }
+        if(i == d_smt.d_definedFunctions->end()) {
+          throw TypeCheckingException(n.toExpr(), string("Undefined function: `") + func.toString() + "'");
+        }
+        if(Debug.isOn("expand")) {
+          Debug("expand") << " defn: " << def.getFunction() << endl
+                          << "       [";
+          if(formals.size() > 0) {
+            copy( formals.begin(), formals.end() - 1,
+                  ostream_iterator<Node>(Debug("expand"), ", ") );
+            Debug("expand") << formals.back();
+          }
+          Debug("expand") << "]" << endl
+                          << "       " << def.getFunction().getType() << endl
+                          << "       " << def.getFormula() << endl;
+        }
+
+        TNode fm = def.getFormula();
+        Node instance = fm.substitute(formals.begin(), formals.end(),
+                                      n.begin(), n.end());
+        Debug("expand") << "made : " << instance << endl;
+
+        Node expanded = expandDefinitions(instance, cache);
+        cache[n] = (n == expanded ? Node::null() : expanded);
+        result.push(expanded);
+        continue;
+      }
+
+      default:
+        // unknown kind for expansion, just iterate over the children
+        node = n;
+      }
+
+      // there should be children here, otherwise we short-circuited a result-push/continue, above
+      Assert(node.getNumChildren() > 0);
+
+      // the partial functions can fall through, in which case we still
+      // consider their children
+      worklist.push(make_triple(Node(n), node, true));
+
+      for(size_t i = 0; i < node.getNumChildren(); ++i) {
+        worklist.push(make_triple(node[i], node[i], false));
+      }
+
+    } else {
+
+      Debug("expand") << "cons : " << node << endl;
+      //cout << "cons : " << node << endl;
+      NodeBuilder<> nb(node.getKind());
+      if(node.getMetaKind() == kind::metakind::PARAMETERIZED) {
+        Debug("expand") << "op   : " << node.getOperator() << endl;
+        //cout << "op   : " << node.getOperator() << endl;
+        nb << node.getOperator();
+      }
+      for(size_t i = 0; i < node.getNumChildren(); ++i) {
+        Assert(!result.empty());
+        Node expanded = result.top();
+        result.pop();
+        //cout << "exchld : " << expanded << endl;
+        Debug("expand") << "exchld : " << expanded << endl;
+        nb << expanded;
+      }
+      node = nb;
+      cache[n] = n == node ? Node::null() : node;
+      result.push(node);
     }
+  } while(!worklist.empty());
 
-    TNode fm = def.getFormula();
-    Node instance = fm.substitute(formals.begin(), formals.end(),
-                                  n.begin(), n.end());
-    Debug("expand") << "made : " << instance << endl;
+  AlwaysAssert(result.size() == 1);
 
-    Node expanded = expandDefinitions(instance, cache);
-    cache[n] = (n == expanded ? Node::null() : expanded);
-    return expanded;
-  }
-
-  default:
-    // unknown kind for expansion, just iterate over the children
-    node = n;
-  }
-
-  // there should be children here, otherwise we short-circuited a return, above
-  Assert(node.getNumChildren() > 0);
-
-  // the partial functions can fall through, in which case we still
-  // consider their children
-  Debug("expand") << "cons : " << node << endl;
-  NodeBuilder<> nb(node.getKind());
-  if(node.getMetaKind() == kind::metakind::PARAMETERIZED) {
-    Debug("expand") << "op   : " << node.getOperator() << endl;
-    nb << node.getOperator();
-  }
-  for(Node::iterator i = node.begin(),
-        iend = node.end();
-      i != iend;
-      ++i) {
-    Node expanded = expandDefinitions(*i, cache);
-    Debug("expand") << "exchld: " << expanded << endl;
-    nb << expanded;
-  }
-  node = nb;
-  cache[n] = n == node ? Node::null() : node;
-  return node;
+  return result.top();
 }
 
 
@@ -1955,8 +2008,7 @@ void SmtEnginePrivate::simpITE() {
 
   Trace("simplify") << "SmtEnginePrivate::simpITE()" << endl;
 
-  for (unsigned i = 0; i < d_assertionsToCheck.size(); ++ i) {
-
+  for (unsigned i = 0; i < d_realAssertionsEnd; ++i) {
     d_assertionsToCheck[i] = d_smt.d_theoryEngine->ppSimpITE(d_assertionsToCheck[i]);
   }
 }
@@ -2558,7 +2610,7 @@ Result SmtEngine::check() {
   if(d_timeBudgetCumulative != 0) {
     millis = getTimeRemaining();
     if(millis == 0) {
-      return Result(Result::VALIDITY_UNKNOWN, Result::TIMEOUT);
+      return Result(Result::VALIDITY_UNKNOWN, Result::TIMEOUT, d_filename);
     }
   }
   if(d_timeBudgetPerCall != 0 && (millis == 0 || d_timeBudgetPerCall < millis)) {
@@ -2569,7 +2621,7 @@ Result SmtEngine::check() {
   if(d_resourceBudgetCumulative != 0) {
     resource = getResourceRemaining();
     if(resource == 0) {
-      return Result(Result::VALIDITY_UNKNOWN, Result::RESOURCEOUT);
+      return Result(Result::VALIDITY_UNKNOWN, Result::RESOURCEOUT, d_filename);
     }
   }
   if(d_resourceBudgetPerCall != 0 && (resource == 0 || d_resourceBudgetPerCall < resource)) {
@@ -2590,13 +2642,13 @@ Result SmtEngine::check() {
   Trace("limit") << "SmtEngine::check(): cumulative millis " << d_cumulativeTimeUsed
                  << ", conflicts " << d_cumulativeResourceUsed << endl;
 
-  return result;
+  return Result(result, d_filename);
 }
 
 Result SmtEngine::quickCheck() {
   Assert(d_fullyInited);
   Trace("smt") << "SMT quickCheck()" << endl;
-  return Result(Result::VALIDITY_UNKNOWN, Result::REQUIRES_FULL_CHECK);
+  return Result(Result::VALIDITY_UNKNOWN, Result::REQUIRES_FULL_CHECK, d_filename);
 }
 
 
@@ -2691,7 +2743,7 @@ void SmtEnginePrivate::processAssertions() {
     Trace("simplify") << "SmtEnginePrivate::simplify(): expanding definitions" << endl;
     TimerStat::CodeTimer codeTimer(d_smt.d_stats->d_definitionExpansionTime);
     hash_map<Node, Node, NodeHashFunction> cache;
-    for (unsigned i = 0; i < d_assertionsToPreprocess.size(); ++ i) {
+    for(unsigned i = 0; i < d_assertionsToPreprocess.size(); ++ i) {
       d_assertionsToPreprocess[i] =
         expandDefinitions(d_assertionsToPreprocess[i], cache);
     }
@@ -3156,7 +3208,7 @@ Result SmtEngine::assertFormula(const Expr& ex) throw(TypeCheckingException, Log
   return quickCheck().asValidityResult();
 }
 
-Node SmtEngine::postprocess(TNode node, TypeNode expectedType) {
+Node SmtEngine::postprocess(TNode node, TypeNode expectedType) const {
   ModelPostprocessor mpost;
   NodeVisitor<ModelPostprocessor> visitor;
   Node value = visitor.run(mpost, node);
@@ -3211,7 +3263,7 @@ Expr SmtEngine::expandDefinitions(const Expr& ex) throw(TypeCheckingException, L
   return n.toExpr();
 }
 
-Expr SmtEngine::getValue(const Expr& ex) throw(ModalException, TypeCheckingException, LogicException) {
+Expr SmtEngine::getValue(const Expr& ex) const throw(ModalException, TypeCheckingException, LogicException) {
   Assert(ex.getExprManager() == d_exprManager);
   SmtScope smts(this);
 
@@ -3366,7 +3418,7 @@ CVC4::SExpr SmtEngine::getAssignment() throw(ModalException) {
   return SExpr(sexprs);
 }
 
-void SmtEngine::addToModelCommandAndDump(const Command& c, bool isGlobal, bool userVisible, const char* dumpTag) {
+void SmtEngine::addToModelCommandAndDump(const Command& c, uint32_t flags, bool userVisible, const char* dumpTag) {
   Trace("smt") << "SMT addToModelCommandAndDump(" << c << ")" << endl;
   SmtScope smts(this);
   // If we aren't yet fully inited, the user might still turn on
@@ -3379,7 +3431,7 @@ void SmtEngine::addToModelCommandAndDump(const Command& c, bool isGlobal, bool u
   // and expects to find their cardinalities in the model.
   if(/* userVisible && */ (!d_fullyInited || options::produceModels())) {
     doPendingPops();
-    if(isGlobal) {
+    if(flags & ExprManager::VAR_FLAG_GLOBAL) {
       d_modelGlobalCommands.push_back(c.clone());
     } else {
       d_modelCommands->push_back(c.clone());
@@ -3417,7 +3469,9 @@ Model* SmtEngine::getModel() throw(ModalException) {
       "Cannot get model when produce-models options is off.";
     throw ModalException(msg);
   }
-  return d_theoryEngine->getModel();
+  TheoryModel* m = d_theoryEngine->getModel();
+  m->d_inputName = d_filename;
+  return m;
 }
 
 void SmtEngine::checkModel(bool hardFailure) {
@@ -3438,13 +3492,8 @@ void SmtEngine::checkModel(bool hardFailure) {
   // Check individual theory assertions
   d_theoryEngine->checkTheoryAssertionsWithModel();
 
-  if(Notice.isOn()) {
-    // This operator<< routine is non-const (i.e., takes a non-const Model&).
-    // This confuses the Notice() output routines, so extract the ostream
-    // from it and output it "manually."  Should be fixed by making Model
-    // accessors const.
-    Notice.getStream() << *m;
-  }
+  // Output the model
+  Notice() << *m;
 
   // We have a "fake context" for the substitution map (we don't need it
   // to be context-dependent)
@@ -3532,6 +3581,12 @@ void SmtEngine::checkModel(bool hardFailure) {
     Debug("boolean-terms") << "++ got " << n << endl;
     Notice() << "SmtEngine::checkModel(): -- substitutes to " << n << endl;
 
+    if(Theory::theoryOf(n) != THEORY_REWRITERULES) {
+      // In case it's a quantifier (or contains one), look up its value before
+      // simplifying, or the quantifier might be irreparably altered.
+      n = m->getValue(n);
+    }
+
     // Simplify the result.
     n = d_private->simplify(n);
     Notice() << "SmtEngine::checkModel(): -- simplifies to  " << n << endl;
@@ -3553,6 +3608,7 @@ void SmtEngine::checkModel(bool hardFailure) {
     // but don't show up in our substitution map above.
     n = m->getValue(n);
     Notice() << "SmtEngine::checkModel(): -- model-substitutes to " << n << endl;
+    AlwaysAssert(!hardFailure || n.isConst() || n.getKind() == kind::LAMBDA);
 
     // The result should be == true.
     if(n != NodeManager::currentNM()->mkConst(true)) {

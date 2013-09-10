@@ -135,7 +135,9 @@ bool BoundedIntegers::hasNonBoundVar( Node f, Node b ) {
   return false;
 }
 
-void BoundedIntegers::processLiteral( Node f, Node lit, bool pol ) {
+void BoundedIntegers::processLiteral( Node f, Node lit, bool pol,
+                                      std::map< int, std::map< Node, Node > >& bound_lit_map,
+                                      std::map< int, std::map< Node, bool > >& bound_lit_pol_map ) {
   if( lit.getKind()==GEQ && lit[0].getType().isInteger() ){
     std::map< Node, Node > msum;
     if (QuantArith::getMonomialSumLit( lit, msum )){
@@ -176,7 +178,10 @@ void BoundedIntegers::processLiteral( Node f, Node lit, bool pol ) {
             if( !isBound( f, bv ) ){
               if( !hasNonBoundVar( f, n1.getKind()==BOUND_VARIABLE ? n2 : n1 ) ) {
                 Trace("bound-int-debug") << "The bound is relevant." << std::endl;
-                d_bounds[n1.getKind()==BOUND_VARIABLE ? 0 : 1][f][bv] = (n1.getKind()==BOUND_VARIABLE ? n2 : n1);
+                int loru = n1.getKind()==BOUND_VARIABLE ? 0 : 1;
+                d_bounds[loru][f][bv] = (n1.getKind()==BOUND_VARIABLE ? n2 : n1);
+                bound_lit_map[loru][bv] = lit;
+                bound_lit_pol_map[loru][bv] = pol;
               }
             }
           }
@@ -189,16 +194,18 @@ void BoundedIntegers::processLiteral( Node f, Node lit, bool pol ) {
   }
 }
 
-void BoundedIntegers::process( Node f, Node n, bool pol ){
+void BoundedIntegers::process( Node f, Node n, bool pol,
+                               std::map< int, std::map< Node, Node > >& bound_lit_map,
+                               std::map< int, std::map< Node, bool > >& bound_lit_pol_map ){
   if( (( n.getKind()==IMPLIES || n.getKind()==OR) && pol) || (n.getKind()==AND && !pol) ){
     for( unsigned i=0; i<n.getNumChildren(); i++) {
       bool newPol = n.getKind()==IMPLIES && i==0 ? !pol : pol;
-      process( f, n[i], newPol );
+      process( f, n[i], newPol, bound_lit_map, bound_lit_pol_map );
     }
   }else if( n.getKind()==NOT ){
-    process( f, n[0], !pol );
+    process( f, n[0], !pol, bound_lit_map, bound_lit_pol_map );
   }else {
-    processLiteral( f, n, pol );
+    processLiteral( f, n, pol, bound_lit_map, bound_lit_pol_map );
   }
 }
 
@@ -218,18 +225,24 @@ void BoundedIntegers::addLiteralFromRange( Node lit, Node r ) {
 void BoundedIntegers::registerQuantifier( Node f ) {
   Trace("bound-int") << "Register quantifier " << f << std::endl;
   bool hasIntType = false;
+  int finiteTypes = 0;
   std::map< Node, int > numMap;
   for( unsigned i=0; i<f[0].getNumChildren(); i++) {
     numMap[f[0][i]] = i;
     if( f[0][i].getType().isInteger() ){
       hasIntType = true;
     }
+    else if( f[0][i].getType().isSort() ){
+      finiteTypes++;
+    }
   }
   if( hasIntType ){
     bool success;
     do{
+      std::map< int, std::map< Node, Node > > bound_lit_map;
+      std::map< int, std::map< Node, bool > > bound_lit_pol_map;
       success = false;
-      process( f, f[1], true );
+      process( f, f[1], true, bound_lit_map, bound_lit_pol_map );
       for( std::map< Node, Node >::iterator it = d_bounds[0][f].begin(); it != d_bounds[0][f].end(); ++it ){
         Node v = it->first;
         if( !isBound(f,v) ){
@@ -237,6 +250,14 @@ void BoundedIntegers::registerQuantifier( Node f ) {
             d_set[f].push_back(v);
             d_set_nums[f].push_back(numMap[v]);
             success = true;
+            //set Attributes on literals
+            for( unsigned b=0; b<2; b++ ){
+              Assert( bound_lit_map[b].find( v )!=bound_lit_map[b].end() );
+              Assert( bound_lit_pol_map[b].find( v )!=bound_lit_pol_map[b].end() );
+              BoundIntLitAttribute bila;
+              bound_lit_map[b][v].setAttribute( bila, bound_lit_pol_map[b][v] ? 1 : 0 );
+            }
+            Trace("bound-int") << "Variable " << v << " is bound because of literals " << bound_lit_map[0][v] << " and " << bound_lit_map[1][v] << std::endl;
           }
         }
       }
@@ -248,7 +269,7 @@ void BoundedIntegers::registerQuantifier( Node f ) {
       d_range[f][v] = Rewriter::rewrite( r );
       Trace("bound-int") << "  " << d_bounds[0][f][v] << " <= " << v << " <= " << d_bounds[1][f][v] << " (range is " << d_range[f][v] << ")" << std::endl;
     }
-    if( d_set[f].size()==f[0].getNumChildren() ){
+    if( d_set[f].size()==(f[0].getNumChildren()-finiteTypes) ){
       d_bound_quants.push_back( f );
       for( unsigned i=0; i<d_set[f].size(); i++) {
         Node v = d_set[f][i];
@@ -256,29 +277,6 @@ void BoundedIntegers::registerQuantifier( Node f ) {
         if( quantifiers::TermDb::hasBoundVarAttr(r) ){
           //introduce a new bound
           Node new_range = NodeManager::currentNM()->mkSkolem( "bir_$$", r.getType(), "bound for term" );
-          /*
-          std::vector< Node > bvs;
-          quantifiers::TermDb::getBoundVars(r, bvs);
-          Assert(bvs.size()>0);
-          Node body = NodeManager::currentNM()->mkNode( LEQ, r, new_range );
-          std::vector< Node > children;
-          //get all the other bounds
-          for( unsigned j=0; j<bvs.size(); j++) {
-            Node l = NodeManager::currentNM()->mkNode( LEQ, NodeManager::currentNM()->mkConst(Rational(0)), bvs[j]);
-            Node u = NodeManager::currentNM()->mkNode( LEQ, bvs[j], d_range[f][bvs[j]] );
-            children.push_back(l);
-            children.push_back(u);
-          }
-          Node antec = NodeManager::currentNM()->mkNode( AND, children );
-          body = NodeManager::currentNM()->mkNode( IMPLIES, antec, body );
-
-          Node bvl = NodeManager::currentNM()->mkNode( BOUND_VAR_LIST, bvs );
-
-          Node lem = NodeManager::currentNM()->mkNode( FORALL, bvl, body );
-          Trace("bound-int") << "For " << v << ", the quantified formula " << lem << " will be used to minimize the bound." << std::endl;
-          Trace("bound-int-lemma") << " *** bound int: bounding quantified lemma " << lem << std::endl;
-          d_quantEngine->getOutputChannel().lemma( lem );
-          */
           d_nground_range[f][v] = d_range[f][v];
           d_range[f][v] = new_range;
           r = new_range;

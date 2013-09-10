@@ -45,6 +45,10 @@ protected:
 public:
   /** information for incremental conflict/clique finding for a particular sort */
   class SortModel {
+  private:
+    std::map< Node, std::vector< int > > d_totality_lems;
+    std::map< TypeNode, std::map< int, std::vector< Node > > > d_sym_break_terms;
+    std::map< Node, int > d_sym_break_index;
   public:
     /** a partition of the current equality graph for which cliques can occur internally */
     class Region {
@@ -146,6 +150,8 @@ public:
     public:
       /** check for cliques */
       bool check( Theory::Effort level, int cardinality, std::vector< Node >& clique );
+      /** get candidate clique */
+      bool getCandidateClique( int cardinality, std::vector< Node >& clique );
       //print debug
       void debugPrint( const char* c, bool incClique = false );
     };
@@ -201,7 +207,7 @@ public:
     /** cardinality */
     context::CDO< int > d_cardinality;
     /** maximum allocated cardinality */
-    int d_aloc_cardinality;
+    context::CDO< int > d_aloc_cardinality;
     /** cardinality lemma term */
     Node d_cardinality_term;
     /** cardinality totality terms */
@@ -222,7 +228,7 @@ public:
     /** get totality lemma terms */
     Node getTotalityLemmaTerm( int cardinality, int i );
   public:
-    SortModel( Node n, context::Context* c, StrongSolverTheoryUF* thss );
+    SortModel( Node n, context::Context* c, context::UserContext* u, StrongSolverTheoryUF* thss );
     virtual ~SortModel(){}
     /** initialize */
     void initialize( OutputChannel* out );

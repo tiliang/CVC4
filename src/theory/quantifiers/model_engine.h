@@ -21,6 +21,7 @@
 #include "theory/quantifiers/model_builder.h"
 #include "theory/model.h"
 #include "theory/quantifiers/full_model_check.h"
+#include "theory/quantifiers/relevant_domain.h"
 
 namespace CVC4 {
 namespace theory {
@@ -33,30 +34,29 @@ private:
   /** builder class */
   QModelBuilder* d_builder;
 private:    //analysis of current model:
-  //is the exhaustive instantiation incomplete?
-  bool d_incomplete_check;
+  RelevantDomain* d_rel_dom;
 private:
   //options
-  bool optOneInstPerQuantRound();
-  bool optUseRelevantDomain();
   bool optOneQuantPerRound();
-  bool optExhInstEvalSkipMultiple();
 private:
   //check model
   int checkModel();
-  //exhaustively instantiate quantifier (possibly using mbqi), return number of lemmas produced
-  int exhaustiveInstantiate( Node f, int effort = 0 );
+  //exhaustively instantiate quantifier (possibly using mbqi)
+  void exhaustiveInstantiate( Node f, int effort = 0 );
 private:
   //temporary statistics
+  //is the exhaustive instantiation incomplete?
+  bool d_incomplete_check;
+  int d_addedLemmas;
   int d_triedLemmas;
-  int d_testLemmas;
   int d_totalLemmas;
-  int d_relevantLemmas;
 public:
   ModelEngine( context::Context* c, QuantifiersEngine* qe );
   ~ModelEngine(){}
+  //get relevant domain
+  RelevantDomain * getRelevantDomain() { return d_rel_dom; }
   //get the builder
-  QModelBuilder* getModelBuilder() { return d_builder; }
+  QModelBuilder * getModelBuilder() { return d_builder; }
 public:
   void check( Theory::Effort e );
   void registerQuantifier( Node f );
@@ -68,10 +68,6 @@ public:
   class Statistics {
   public:
     IntStat d_inst_rounds;
-    IntStat d_eval_formulas;
-    IntStat d_eval_uf_terms;
-    IntStat d_eval_lits;
-    IntStat d_eval_lits_unknown;
     IntStat d_exh_inst_lemmas;
     Statistics();
     ~Statistics();

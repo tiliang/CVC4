@@ -71,14 +71,14 @@ class CVC4_PUBLIC ParserBuilder {
   /** Should we parse in strict mode? */
   bool d_strictMode;
 
+  /** Should we allow include-file commands? */
+  bool d_canIncludeFile;
+
   /** Should we memory-map a file input? */
   bool d_mmap;
 
   /** Are we parsing only? */
   bool d_parseOnly;
-
-  /** hack for szs compliance */
-  bool d_szsCompliant;
 
   /** Initialize this parser builder */
   void init(ExprManager* exprManager, const std::string& filename);
@@ -148,6 +148,13 @@ public:
    * (Default: no)
    */
   ParserBuilder& withStrictMode(bool flag = true);
+
+  /**
+   * Should the include-file commands be enabled?
+   *
+   * (Default: yes)
+   */
+  ParserBuilder& withIncludeFile(bool flag = true);
 
   /** Set the parser to use the given stream for its input. */
   ParserBuilder& withStreamInput(std::istream& input);

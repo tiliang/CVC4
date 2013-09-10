@@ -54,6 +54,7 @@ void ParserBuilder::init(ExprManager* exprManager,
   d_exprManager = exprManager;
   d_checksEnabled = true;
   d_strictMode = false;
+  d_canIncludeFile = true;
   d_mmap = false;
   d_parseOnly = false;
 }
@@ -89,11 +90,7 @@ Parser* ParserBuilder::build()
     parser = new Smt2(d_exprManager, input, d_strictMode, d_parseOnly);
     break;
   case language::input::LANG_TPTP:
-  {
-    Tptp * tparser = new Tptp(d_exprManager, input, d_strictMode, d_parseOnly);
-    tparser->d_szsCompliant = d_szsCompliant;
-    parser = tparser;
-  }
+    parser = new Tptp(d_exprManager, input, d_strictMode, d_parseOnly);
     break;
   default:
     parser = new Parser(d_exprManager, input, d_strictMode, d_parseOnly);
@@ -104,6 +101,12 @@ Parser* ParserBuilder::build()
     parser->enableChecks();
   } else {
     parser->disableChecks();
+  }
+
+  if( d_canIncludeFile ) {
+    parser->allowIncludeFile();
+  } else {
+    parser->disallowIncludeFile();
   }
 
   return parser;
@@ -145,17 +148,22 @@ ParserBuilder& ParserBuilder::withParseOnly(bool flag) {
 }
 
 ParserBuilder& ParserBuilder::withOptions(const Options& options) {
-  d_szsCompliant = options[options::szsCompliant];
   return
     withInputLanguage(options[options::inputLanguage])
       .withMmap(options[options::memoryMap])
       .withChecks(options[options::semanticChecks])
       .withStrictMode(options[options::strictParsing])
-      .withParseOnly(options[options::parseOnly]);
+      .withParseOnly(options[options::parseOnly])
+      .withIncludeFile(options[options::canIncludeFile]);
   }
 
 ParserBuilder& ParserBuilder::withStrictMode(bool flag) {
   d_strictMode = flag;
+  return *this;
+}
+
+ParserBuilder& ParserBuilder::withIncludeFile(bool flag) {
+  d_canIncludeFile = flag;
   return *this;
 }
 

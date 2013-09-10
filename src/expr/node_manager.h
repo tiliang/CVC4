@@ -75,12 +75,12 @@ typedef expr::Attribute<expr::attr::DatatypeRecordTag, TypeNode> DatatypeRecordA
 class NodeManagerListener {
 public:
   virtual ~NodeManagerListener() { }
-  virtual void nmNotifyNewSort(TypeNode tn) { }
+  virtual void nmNotifyNewSort(TypeNode tn, uint32_t flags) { }
   virtual void nmNotifyNewSortConstructor(TypeNode tn) { }
-  virtual void nmNotifyInstantiateSortConstructor(TypeNode ctor, TypeNode sort) { }
+  virtual void nmNotifyInstantiateSortConstructor(TypeNode ctor, TypeNode sort, uint32_t flags) { }
   virtual void nmNotifyNewDatatypes(const std::vector<DatatypeType>& datatypes) { }
-  virtual void nmNotifyNewVar(TNode n, bool isGlobal) { }
-  virtual void nmNotifyNewSkolem(TNode n, const std::string& comment, bool isGlobal) { }
+  virtual void nmNotifyNewVar(TNode n, uint32_t flags) { }
+  virtual void nmNotifyNewSkolem(TNode n, const std::string& comment, uint32_t flags) { }
 };/* class NodeManagerListener */
 
 class NodeManager {
@@ -90,8 +90,8 @@ class NodeManager {
   friend class expr::TypeChecker;
 
   // friends so they can access mkVar() here, which is private
-  friend Expr ExprManager::mkVar(const std::string&, Type, bool isGlobal);
-  friend Expr ExprManager::mkVar(Type, bool isGlobal);
+  friend Expr ExprManager::mkVar(const std::string&, Type, uint32_t flags);
+  friend Expr ExprManager::mkVar(Type, uint32_t flags);
 
   // friend so it can access NodeManager's d_listeners and notify clients
   friend std::vector<DatatypeType> ExprManager::mkMutualDatatypeTypes(const std::vector<Datatype>&, const std::set<Type>&);
@@ -309,12 +309,12 @@ class NodeManager {
    * version of this is private to avoid internal uses of mkVar() from
    * within CVC4.  Such uses should employ mkSkolem() instead.
    */
-  Node mkVar(const std::string& name, const TypeNode& type, bool isGlobal = false);
-  Node* mkVarPtr(const std::string& name, const TypeNode& type, bool isGlobal = false);
+  Node mkVar(const std::string& name, const TypeNode& type, uint32_t flags = ExprManager::VAR_FLAG_NONE);
+  Node* mkVarPtr(const std::string& name, const TypeNode& type, uint32_t flags = ExprManager::VAR_FLAG_NONE);
 
   /** Create a variable with the given type. */
-  Node mkVar(const TypeNode& type, bool isGlobal = false);
-  Node* mkVarPtr(const TypeNode& type, bool isGlobal = false);
+  Node mkVar(const TypeNode& type, uint32_t flags = ExprManager::VAR_FLAG_NONE);
+  Node* mkVarPtr(const TypeNode& type, uint32_t flags = ExprManager::VAR_FLAG_NONE);
 
 public:
 
@@ -352,6 +352,9 @@ public:
     Assert(elt != d_listeners.end(), "listener not subscribed");
     d_listeners.erase(elt);
   }
+
+  /** Get a Kind from an operator expression */
+  static inline Kind operatorToKind(TNode n);
 
   // general expression-builders
 
@@ -778,14 +781,15 @@ public:
   inline TypeNode mkTesterType(TypeNode domain);
 
   /** Make a new (anonymous) sort of arity 0. */
-  inline TypeNode mkSort();
+  inline TypeNode mkSort(uint32_t flags = ExprManager::SORT_FLAG_NONE);
 
   /** Make a new sort with the given name of arity 0. */
-  inline TypeNode mkSort(const std::string& name);
+  inline TypeNode mkSort(const std::string& name, uint32_t flags = ExprManager::SORT_FLAG_NONE);
 
   /** Make a new sort by parameterizing the given sort constructor. */
   inline TypeNode mkSort(TypeNode constructor,
-                         const std::vector<TypeNode>& children);
+                         const std::vector<TypeNode>& children,
+                         uint32_t flags = ExprManager::SORT_FLAG_NONE);
 
   /** Make a new sort with the given name and arity. */
   inline TypeNode mkSortConstructor(const std::string& name, size_t arity);
@@ -1095,7 +1099,6 @@ NodeManager::mkPredicateType(const std::vector<TypeNode>& sorts) {
 }
 
 inline TypeNode NodeManager::mkTupleType(const std::vector<TypeNode>& types) {
-  Assert(types.size() >= 1);
   std::vector<TypeNode> typeNodes;
   for (unsigned i = 0; i < types.size(); ++ i) {
     CheckArgument(!types[i].isFunctionLike(), types,
@@ -1226,31 +1229,32 @@ inline bool NodeManager::hasOperator(Kind k) {
   }
 }
 
-inline TypeNode NodeManager::mkSort() {
+inline TypeNode NodeManager::mkSort(uint32_t flags) {
   NodeBuilder<1> nb(this, kind::SORT_TYPE);
   Node sortTag = NodeBuilder<0>(this, kind::SORT_TAG);
   nb << sortTag;
   TypeNode tn = nb.constructTypeNode();
   for(std::vector<NodeManagerListener*>::iterator i = d_listeners.begin(); i != d_listeners.end(); ++i) {
-    (*i)->nmNotifyNewSort(tn);
+    (*i)->nmNotifyNewSort(tn, flags);
   }
   return tn;
 }
 
-inline TypeNode NodeManager::mkSort(const std::string& name) {
+inline TypeNode NodeManager::mkSort(const std::string& name, uint32_t flags) {
   NodeBuilder<1> nb(this, kind::SORT_TYPE);
   Node sortTag = NodeBuilder<0>(this, kind::SORT_TAG);
   nb << sortTag;
   TypeNode tn = nb.constructTypeNode();
   setAttribute(tn, expr::VarNameAttr(), name);
   for(std::vector<NodeManagerListener*>::iterator i = d_listeners.begin(); i != d_listeners.end(); ++i) {
-    (*i)->nmNotifyNewSort(tn);
+    (*i)->nmNotifyNewSort(tn, flags);
   }
   return tn;
 }
 
 inline TypeNode NodeManager::mkSort(TypeNode constructor,
-                                    const std::vector<TypeNode>& children) {
+                                    const std::vector<TypeNode>& children,
+                                    uint32_t flags) {
   Assert(constructor.getKind() == kind::SORT_TYPE &&
          constructor.getNumChildren() == 0,
          "expected a sort constructor");
@@ -1268,7 +1272,7 @@ inline TypeNode NodeManager::mkSort(TypeNode constructor,
   TypeNode type = nb.constructTypeNode();
   setAttribute(type, expr::VarNameAttr(), name);
   for(std::vector<NodeManagerListener*>::iterator i = d_listeners.begin(); i != d_listeners.end(); ++i) {
-    (*i)->nmNotifyInstantiateSortConstructor(constructor, type);
+    (*i)->nmNotifyInstantiateSortConstructor(constructor, type, flags);
   }
   return type;
 }
@@ -1286,6 +1290,10 @@ inline TypeNode NodeManager::mkSortConstructor(const std::string& name,
     (*i)->nmNotifyNewSortConstructor(type);
   }
   return type;
+}
+
+inline Kind NodeManager::operatorToKind(TNode n) {
+  return kind::operatorToKind(n.d_nv);
 }
 
 inline Node NodeManager::mkNode(Kind kind, TNode child1) {
@@ -1375,80 +1383,114 @@ inline Node* NodeManager::mkNodePtr(Kind kind,
 
 // for operators
 inline Node NodeManager::mkNode(TNode opNode) {
-  NodeBuilder<1> nb(this, kind::operatorKindToKind(opNode.getKind()));
-  nb << opNode;
+  NodeBuilder<1> nb(this, operatorToKind(opNode));
+  if(opNode.getKind() != kind::BUILTIN) {
+    nb << opNode;
+  }
   return nb.constructNode();
 }
 
 inline Node* NodeManager::mkNodePtr(TNode opNode) {
-  NodeBuilder<1> nb(this, kind::operatorKindToKind(opNode.getKind()));
-  nb << opNode;
+  NodeBuilder<1> nb(this, operatorToKind(opNode));
+  if(opNode.getKind() != kind::BUILTIN) {
+    nb << opNode;
+  }
   return nb.constructNodePtr();
 }
 
 inline Node NodeManager::mkNode(TNode opNode, TNode child1) {
-  NodeBuilder<2> nb(this, kind::operatorKindToKind(opNode.getKind()));
-  nb << opNode << child1;
+  NodeBuilder<2> nb(this, operatorToKind(opNode));
+  if(opNode.getKind() != kind::BUILTIN) {
+    nb << opNode;
+  }
+  nb << child1;
   return nb.constructNode();
 }
 
 inline Node* NodeManager::mkNodePtr(TNode opNode, TNode child1) {
-  NodeBuilder<2> nb(this, kind::operatorKindToKind(opNode.getKind()));
-  nb << opNode << child1;
+  NodeBuilder<2> nb(this, operatorToKind(opNode));
+  if(opNode.getKind() != kind::BUILTIN) {
+    nb << opNode;
+  }
+  nb << child1;
   return nb.constructNodePtr();
 }
 
 inline Node NodeManager::mkNode(TNode opNode, TNode child1, TNode child2) {
-  NodeBuilder<3> nb(this, kind::operatorKindToKind(opNode.getKind()));
-  nb << opNode << child1 << child2;
+  NodeBuilder<3> nb(this, operatorToKind(opNode));
+  if(opNode.getKind() != kind::BUILTIN) {
+    nb << opNode;
+  }
+  nb << child1 << child2;
   return nb.constructNode();
 }
 
 inline Node* NodeManager::mkNodePtr(TNode opNode, TNode child1, TNode child2) {
-  NodeBuilder<3> nb(this, kind::operatorKindToKind(opNode.getKind()));
-  nb << opNode << child1 << child2;
+  NodeBuilder<3> nb(this, operatorToKind(opNode));
+  if(opNode.getKind() != kind::BUILTIN) {
+    nb << opNode;
+  }
+  nb << child1 << child2;
   return nb.constructNodePtr();
 }
 
 inline Node NodeManager::mkNode(TNode opNode, TNode child1, TNode child2,
                                 TNode child3) {
-  NodeBuilder<4> nb(this, kind::operatorKindToKind(opNode.getKind()));
-  nb << opNode << child1 << child2 << child3;
+  NodeBuilder<4> nb(this, operatorToKind(opNode));
+  if(opNode.getKind() != kind::BUILTIN) {
+    nb << opNode;
+  }
+  nb << child1 << child2 << child3;
   return nb.constructNode();
 }
 
 inline Node* NodeManager::mkNodePtr(TNode opNode, TNode child1, TNode child2,
                                 TNode child3) {
-  NodeBuilder<4> nb(this, kind::operatorKindToKind(opNode.getKind()));
-  nb << opNode << child1 << child2 << child3;
+  NodeBuilder<4> nb(this, operatorToKind(opNode));
+  if(opNode.getKind() != kind::BUILTIN) {
+    nb << opNode;
+  }
+  nb << child1 << child2 << child3;
   return nb.constructNodePtr();
 }
 
 inline Node NodeManager::mkNode(TNode opNode, TNode child1, TNode child2,
                                 TNode child3, TNode child4) {
-  NodeBuilder<5> nb(this, kind::operatorKindToKind(opNode.getKind()));
-  nb << opNode << child1 << child2 << child3 << child4;
+  NodeBuilder<5> nb(this, operatorToKind(opNode));
+  if(opNode.getKind() != kind::BUILTIN) {
+    nb << opNode;
+  }
+  nb << child1 << child2 << child3 << child4;
   return nb.constructNode();
 }
 
 inline Node* NodeManager::mkNodePtr(TNode opNode, TNode child1, TNode child2,
                                 TNode child3, TNode child4) {
-  NodeBuilder<5> nb(this, kind::operatorKindToKind(opNode.getKind()));
-  nb << opNode << child1 << child2 << child3 << child4;
+  NodeBuilder<5> nb(this, operatorToKind(opNode));
+  if(opNode.getKind() != kind::BUILTIN) {
+    nb << opNode;
+  }
+  nb << child1 << child2 << child3 << child4;
   return nb.constructNodePtr();
 }
 
 inline Node NodeManager::mkNode(TNode opNode, TNode child1, TNode child2,
                                 TNode child3, TNode child4, TNode child5) {
-  NodeBuilder<6> nb(this, kind::operatorKindToKind(opNode.getKind()));
-  nb << opNode << child1 << child2 << child3 << child4 << child5;
+  NodeBuilder<6> nb(this, operatorToKind(opNode));
+  if(opNode.getKind() != kind::BUILTIN) {
+    nb << opNode;
+  }
+  nb << child1 << child2 << child3 << child4 << child5;
   return nb.constructNode();
 }
 
 inline Node* NodeManager::mkNodePtr(TNode opNode, TNode child1, TNode child2,
                                     TNode child3, TNode child4, TNode child5) {
-  NodeBuilder<6> nb(this, kind::operatorKindToKind(opNode.getKind()));
-  nb << opNode << child1 << child2 << child3 << child4 << child5;
+  NodeBuilder<6> nb(this, operatorToKind(opNode));
+  if(opNode.getKind() != kind::BUILTIN) {
+    nb << opNode;
+  }
+  nb << child1 << child2 << child3 << child4 << child5;
   return nb.constructNodePtr();
 }
 
@@ -1457,8 +1499,10 @@ template <bool ref_count>
 inline Node NodeManager::mkNode(TNode opNode,
                                 const std::vector<NodeTemplate<ref_count> >&
                                 children) {
-  NodeBuilder<> nb(this, kind::operatorKindToKind(opNode.getKind()));
-  nb << opNode;
+  NodeBuilder<> nb(this, operatorToKind(opNode));
+  if(opNode.getKind() != kind::BUILTIN) {
+    nb << opNode;
+  }
   nb.append(children);
   return nb.constructNode();
 }
@@ -1467,8 +1511,10 @@ template <bool ref_count>
 inline Node* NodeManager::mkNodePtr(TNode opNode,
                                     const std::vector<NodeTemplate<ref_count> >&
                                     children) {
-  NodeBuilder<> nb(this, kind::operatorKindToKind(opNode.getKind()));
-  nb << opNode;
+  NodeBuilder<> nb(this, operatorToKind(opNode));
+  if(opNode.getKind() != kind::BUILTIN) {
+    nb << opNode;
+  }
   nb.append(children);
   return nb.constructNodePtr();
 }
@@ -1495,27 +1541,27 @@ inline TypeNode NodeManager::mkTypeNode(Kind kind,
 }
 
 
-inline Node NodeManager::mkVar(const std::string& name, const TypeNode& type, bool isGlobal) {
+inline Node NodeManager::mkVar(const std::string& name, const TypeNode& type, uint32_t flags) {
   Node n = NodeBuilder<0>(this, kind::VARIABLE);
   setAttribute(n, TypeAttr(), type);
   setAttribute(n, TypeCheckedAttr(), true);
   setAttribute(n, expr::VarNameAttr(), name);
-  setAttribute(n, expr::GlobalVarAttr(), isGlobal);
+  setAttribute(n, expr::GlobalVarAttr(), flags & ExprManager::VAR_FLAG_GLOBAL);
   for(std::vector<NodeManagerListener*>::iterator i = d_listeners.begin(); i != d_listeners.end(); ++i) {
-    (*i)->nmNotifyNewVar(n, isGlobal);
+    (*i)->nmNotifyNewVar(n, flags);
   }
   return n;
 }
 
 inline Node* NodeManager::mkVarPtr(const std::string& name,
-                                   const TypeNode& type, bool isGlobal) {
+                                   const TypeNode& type, uint32_t flags) {
   Node* n = NodeBuilder<0>(this, kind::VARIABLE).constructNodePtr();
   setAttribute(*n, TypeAttr(), type);
   setAttribute(*n, TypeCheckedAttr(), true);
   setAttribute(*n, expr::VarNameAttr(), name);
-  setAttribute(*n, expr::GlobalVarAttr(), isGlobal);
+  setAttribute(*n, expr::GlobalVarAttr(), flags & ExprManager::VAR_FLAG_GLOBAL);
   for(std::vector<NodeManagerListener*>::iterator i = d_listeners.begin(); i != d_listeners.end(); ++i) {
-    (*i)->nmNotifyNewVar(*n, isGlobal);
+    (*i)->nmNotifyNewVar(*n, flags);
   }
   return n;
 }
@@ -1533,24 +1579,24 @@ inline Node* NodeManager::mkBoundVarPtr(const std::string& name,
   return n;
 }
 
-inline Node NodeManager::mkVar(const TypeNode& type, bool isGlobal) {
+inline Node NodeManager::mkVar(const TypeNode& type, uint32_t flags) {
   Node n = NodeBuilder<0>(this, kind::VARIABLE);
   setAttribute(n, TypeAttr(), type);
   setAttribute(n, TypeCheckedAttr(), true);
-  setAttribute(n, expr::GlobalVarAttr(), isGlobal);
+  setAttribute(n, expr::GlobalVarAttr(), flags & ExprManager::VAR_FLAG_GLOBAL);
   for(std::vector<NodeManagerListener*>::iterator i = d_listeners.begin(); i != d_listeners.end(); ++i) {
-    (*i)->nmNotifyNewVar(n, isGlobal);
+    (*i)->nmNotifyNewVar(n, flags);
   }
   return n;
 }
 
-inline Node* NodeManager::mkVarPtr(const TypeNode& type, bool isGlobal) {
+inline Node* NodeManager::mkVarPtr(const TypeNode& type, uint32_t flags) {
   Node* n = NodeBuilder<0>(this, kind::VARIABLE).constructNodePtr();
   setAttribute(*n, TypeAttr(), type);
   setAttribute(*n, TypeCheckedAttr(), true);
-  setAttribute(*n, expr::GlobalVarAttr(), isGlobal);
+  setAttribute(*n, expr::GlobalVarAttr(), flags & ExprManager::VAR_FLAG_GLOBAL);
   for(std::vector<NodeManagerListener*>::iterator i = d_listeners.begin(); i != d_listeners.end(); ++i) {
-    (*i)->nmNotifyNewVar(*n, isGlobal);
+    (*i)->nmNotifyNewVar(*n, flags);
   }
   return n;
 }

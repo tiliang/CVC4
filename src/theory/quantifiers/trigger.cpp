@@ -44,7 +44,7 @@ d_quantEngine( qe ), d_f( f ){
         d_mg = new InstMatchGeneratorSimple( f, d_nodes[0] );
       }else{
         d_mg = InstMatchGenerator::mkInstMatchGenerator( d_nodes[0], qe );
-        d_mg->setActiveAdd();
+        d_mg->setActiveAdd(true);
       }
     }else{
       d_mg = new InstMatchGeneratorMulti( f, d_nodes, qe, matchOption );
@@ -53,7 +53,7 @@ d_quantEngine( qe ), d_f( f ){
     }
   }else{
     d_mg = InstMatchGenerator::mkInstMatchGenerator( d_nodes, qe );
-    d_mg->setActiveAdd();
+    d_mg->setActiveAdd(true);
   }
   if( d_nodes.size()==1 ){
     if( isSimpleTrigger( d_nodes[0] ) ){
@@ -73,6 +73,7 @@ d_quantEngine( qe ), d_f( f ){
       qe->getTermDatabase()->registerTrigger( this, d_nodes[i].getOperator() );
     }
   }
+  Trace("trigger-debug") << "Finished making trigger." << std::endl;
 }
 
 void Trigger::resetInstantiationRound(){
@@ -144,6 +145,12 @@ Trigger* Trigger::mkTrigger( QuantifiersEngine* qe, Node f, std::vector< Node >&
       }
     }
     if( varCount<f[0].getNumChildren() ){
+      Trace("trigger-debug") << "Don't consider trigger since it does not contain all variables in " << f << std::endl;
+      for( unsigned i=0; i<nodes.size(); i++) {
+        Trace("trigger-debug") << nodes[i] << " ";
+      }
+      Trace("trigger-debug") << std::endl;
+
       //do not generate multi-trigger if it does not contain all variables
       return NULL;
     }else{
@@ -301,7 +308,7 @@ Node Trigger::getIsUsableTrigger( Node n, Node f, bool pol, bool hasPol ) {
     }
   }
   bool usable = quantifiers::TermDb::getInstConstAttr(n)==f && isAtomicTrigger( n ) && isUsable( n, f );
-  Trace("usable") << n << " usable : " << usable << std::endl;
+  Trace("usable") << n << " usable : " << (quantifiers::TermDb::getInstConstAttr(n)==f) << " " << isAtomicTrigger( n ) << " " << isUsable( n, f ) << std::endl;
   if( usable ){
     return n;
   }else{

@@ -158,6 +158,12 @@ class CVC4_PUBLIC Parser {
   /** Are we only parsing? */
   bool d_parseOnly;
 
+  /**
+   * Can we include files?  (Set to false for security purposes in
+   * e.g. the online version.)
+   */
+  bool d_canIncludeFile;
+
   /** The set of operators available in the current logic. */
   std::set<Kind> d_logicOperators;
 
@@ -252,6 +258,10 @@ public:
 
   bool strictModeEnabled() { return d_strictMode; }
 
+  void allowIncludeFile() { d_canIncludeFile = true; }
+  void disallowIncludeFile() { d_canIncludeFile = false; }
+  bool canIncludeFile() const { return d_canIncludeFile; }
+
   /**
    * Returns a variable, given a name.
    *
@@ -302,7 +312,8 @@ public:
    * @throws ParserException if checks are enabled and the check fails
    */
   void checkDeclaration(const std::string& name, DeclarationCheck check,
-                        SymbolType type = SYM_VARIABLE) throw(ParserException);
+                        SymbolType type = SYM_VARIABLE,
+                        std::string notes = "") throw(ParserException);
 
   /**
    * Reserve a symbol at the assertion level.
@@ -348,14 +359,14 @@ public:
 
   /** Create a new CVC4 variable expression of the given type. */
   Expr mkVar(const std::string& name, const Type& type,
-             bool levelZero = false);
+             uint32_t flags = ExprManager::VAR_FLAG_NONE);
 
   /**
    * Create a set of new CVC4 variable expressions of the given type.
    */
   std::vector<Expr>
     mkVars(const std::vector<std::string> names, const Type& type,
-           bool levelZero = false);
+           uint32_t flags = ExprManager::VAR_FLAG_NONE);
 
   /** Create a new CVC4 bound variable expression of the given type. */
   Expr mkBoundVar(const std::string& name, const Type& type);
@@ -367,18 +378,19 @@ public:
 
   /** Create a new CVC4 function expression of the given type. */
   Expr mkFunction(const std::string& name, const Type& type,
-                  bool levelZero = false);
+                  uint32_t flags = ExprManager::VAR_FLAG_NONE);
 
   /**
    * Create a new CVC4 function expression of the given type,
    * appending a unique index to its name.  (That's the ONLY
    * difference between mkAnonymousFunction() and mkFunction()).
    */
-  Expr mkAnonymousFunction(const std::string& prefix, const Type& type);
+  Expr mkAnonymousFunction(const std::string& prefix, const Type& type,
+                           uint32_t flags = ExprManager::VAR_FLAG_NONE);
 
   /** Create a new variable definition (e.g., from a let binding). */
   void defineVar(const std::string& name, const Expr& val,
-                       bool levelZero = false);
+                 bool levelZero = false);
 
   /** Create a new function definition (e.g., from a define-fun). */
   void defineFunction(const std::string& name, const Expr& val,
@@ -399,7 +411,8 @@ public:
   /**
    * Creates a new sort with the given name.
    */
-  SortType mkSort(const std::string& name);
+  SortType mkSort(const std::string& name,
+                  uint32_t flags = ExprManager::SORT_FLAG_NONE);
 
   /**
    * Creates a new sort constructor with the given name and arity.

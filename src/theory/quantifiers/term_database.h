@@ -64,6 +64,15 @@ typedef expr::Attribute<HasBoundVarAttributeId, bool> HasBoundVarAttribute;
 struct HasBoundVarComputedAttributeId {};
 typedef expr::Attribute<HasBoundVarComputedAttributeId, bool> HasBoundVarComputedAttribute;
 
+//for rewrite rules
+struct QRewriteRuleAttributeId {};
+typedef expr::Attribute<QRewriteRuleAttributeId, Node> QRewriteRuleAttribute;
+
+//for bounded integers
+struct BoundIntLitAttributeId {};
+typedef expr::Attribute<BoundIntLitAttributeId, uint64_t> BoundIntLitAttribute;
+
+
 class QuantifiersEngine;
 
 namespace inst{

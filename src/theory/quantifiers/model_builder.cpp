@@ -36,7 +36,10 @@ using namespace CVC4::theory::quantifiers;
 QModelBuilder::QModelBuilder( context::Context* c, QuantifiersEngine* qe ) :
 TheoryEngineModelBuilder( qe->getTheoryEngine() ), d_curr_model( c, NULL ), d_qe( qe ){
   d_considerAxioms = true;
-  d_addedLemmas = 0;
+}
+
+bool QModelBuilder::isQuantifierActive( Node f ) {
+  return !f.hasAttribute(QRewriteRuleAttribute());
 }
 
 
@@ -47,6 +50,9 @@ bool QModelBuilder::optUseModel() {
 void QModelBuilder::debugModel( FirstOrderModel* fm ){
   //debug the model: cycle through all instantiations for all quantifiers, report ones that are not true
   if( Trace.isOn("quant-model-warn") ){
+    Trace("quant-model-warn") << "Testing quantifier instantiations..." << std::endl;
+    int tests = 0;
+    int bad = 0;
     for( int i=0; i<fm->getNumAssertedQuantifiers(); i++ ){
       Node f = fm->getAssertedQuantifier( i );
       std::vector< Node > vars;
@@ -54,20 +60,30 @@ void QModelBuilder::debugModel( FirstOrderModel* fm ){
         vars.push_back( f[0][j] );
       }
       RepSetIterator riter( d_qe, &(fm->d_rep_set) );
-      riter.setQuantifier( f );
-      while( !riter.isFinished() ){
-        std::vector< Node > terms;
-        for( int i=0; i<riter.getNumTerms(); i++ ){
-          terms.push_back( riter.getTerm( i ) );
+      if( riter.setQuantifier( f ) ){
+        while( !riter.isFinished() ){
+          tests++;
+          std::vector< Node > terms;
+          for( int i=0; i<riter.getNumTerms(); i++ ){
+            terms.push_back( riter.getTerm( i ) );
+          }
+          Node n = d_qe->getInstantiation( f, vars, terms );
+          Node val = fm->getValue( n );
+          if( val!=fm->d_true ){
+            Trace("quant-model-warn") << "*******  Instantiation " << n << " for " << std::endl;
+            Trace("quant-model-warn") << "         " << f << std::endl;
+            Trace("quant-model-warn") << "         Evaluates to " << val << std::endl;
+            bad++;
+          }
+          riter.increment();
         }
-        Node n = d_qe->getInstantiation( f, vars, terms );
-        Node val = fm->getValue( n );
-        if( val!=fm->d_true ){
-          Trace("quant-model-warn") << "*******  Instantiation " << n << " for " << std::endl;
-          Trace("quant-model-warn") << "         " << f << std::endl;
-          Trace("quant-model-warn") << "         Evaluates to " << val << std::endl;
+        Trace("quant-model-warn") << "Tested " << tests << " instantiations";
+        if( bad>0 ){
+          Trace("quant-model-warn") << ", " << bad << " failed" << std::endl;
         }
-        riter.increment();
+        Trace("quant-model-warn") << "." << std::endl;
+      }else{
+        Trace("quant-model-warn") << "Warning: Could not test quantifier " << f << std::endl;
       }
     }
   }
@@ -124,7 +140,6 @@ void QModelBuilderIG::processBuildModel( TheoryModel* m, bool fullModel ) {
     debugModel( fm );
   }else{
     d_curr_model = fm;
-    d_addedLemmas = 0;
     d_didInstGen = false;
     //reset the internal information
     reset( fm );
@@ -336,15 +351,23 @@ bool QModelBuilderIG::optOneQuantPerRoundInstGen(){
 }
 
 QModelBuilderIG::Statistics::Statistics():
-  d_num_quants_init("QModelBuilder::Number_Quantifiers", 0),
-  d_num_partial_quants_init("QModelBuilder::Number_Partial_Quantifiers", 0),
-  d_init_inst_gen_lemmas("QModelBuilder::Initialize_Inst_Gen_Lemmas", 0 ),
-  d_inst_gen_lemmas("QModelBuilder::Inst_Gen_Lemmas", 0 )
+  d_num_quants_init("QModelBuilderIG::Number_Quantifiers", 0),
+  d_num_partial_quants_init("QModelBuilderIG::Number_Partial_Quantifiers", 0),
+  d_init_inst_gen_lemmas("QModelBuilderIG::Initialize_Inst_Gen_Lemmas", 0 ),
+  d_inst_gen_lemmas("QModelBuilderIG::Inst_Gen_Lemmas", 0 ),
+  d_eval_formulas("QModelBuilderIG::Eval_Formulas", 0 ),
+  d_eval_uf_terms("QModelBuilderIG::Eval_Uf_Terms", 0 ),
+  d_eval_lits("QModelBuilderIG::Eval_Lits", 0 ),
+  d_eval_lits_unknown("QModelBuilderIG::Eval_Lits_Unknown", 0 )
 {
   StatisticsRegistry::registerStat(&d_num_quants_init);
   StatisticsRegistry::registerStat(&d_num_partial_quants_init);
   StatisticsRegistry::registerStat(&d_init_inst_gen_lemmas);
   StatisticsRegistry::registerStat(&d_inst_gen_lemmas);
+  StatisticsRegistry::registerStat(&d_eval_formulas);
+  StatisticsRegistry::registerStat(&d_eval_uf_terms);
+  StatisticsRegistry::registerStat(&d_eval_lits);
+  StatisticsRegistry::registerStat(&d_eval_lits_unknown);
 }
 
 QModelBuilderIG::Statistics::~Statistics(){
@@ -352,10 +375,15 @@ QModelBuilderIG::Statistics::~Statistics(){
   StatisticsRegistry::unregisterStat(&d_num_partial_quants_init);
   StatisticsRegistry::unregisterStat(&d_init_inst_gen_lemmas);
   StatisticsRegistry::unregisterStat(&d_inst_gen_lemmas);
+  StatisticsRegistry::unregisterStat(&d_eval_formulas);
+  StatisticsRegistry::unregisterStat(&d_eval_uf_terms);
+  StatisticsRegistry::unregisterStat(&d_eval_lits);
+  StatisticsRegistry::unregisterStat(&d_eval_lits_unknown);
 }
 
 bool QModelBuilderIG::isQuantifierActive( Node f ){
-  return ( d_considerAxioms || !f.getAttribute(AxiomAttribute()) ) && d_quant_sat.find( f )==d_quant_sat.end();
+  return !f.hasAttribute(QRewriteRuleAttribute()) &&
+         ( d_considerAxioms || !f.getAttribute(AxiomAttribute()) ) && d_quant_sat.find( f )==d_quant_sat.end();
 }
 
 bool QModelBuilderIG::isTermActive( Node n ){
@@ -365,6 +393,86 @@ bool QModelBuilderIG::isTermActive( Node n ){
                                                                                                       //to another active term
 }
 
+
+//do exhaustive instantiation
+bool QModelBuilderIG::doExhaustiveInstantiation( FirstOrderModel * fm, Node f, int effort ) {
+  if( optUseModel() ){
+
+    RepSetIterator riter( d_qe, &(d_qe->getModel()->d_rep_set) );
+    if( riter.setQuantifier( f ) ){
+      FirstOrderModelIG * fmig = (FirstOrderModelIG*)d_qe->getModel();
+      Debug("inst-fmf-ei") << "Reset evaluate..." << std::endl;
+      fmig->resetEvaluate();
+      Debug("inst-fmf-ei") << "Begin instantiation..." << std::endl;
+      while( !riter.isFinished() && ( d_addedLemmas==0 || !options::fmfOneInstPerRound() ) ){
+        d_triedLemmas++;
+        for( int i=0; i<(int)riter.d_index.size(); i++ ){
+          Trace("try") << i << " : " << riter.d_index[i] << " : " << riter.getTerm( i ) << std::endl;
+        }
+        int eval = 0;
+        int depIndex;
+        //see if instantiation is already true in current model
+        Debug("fmf-model-eval") << "Evaluating ";
+        riter.debugPrintSmall("fmf-model-eval");
+        Debug("fmf-model-eval") << "Done calculating terms." << std::endl;
+        //if evaluate(...)==1, then the instantiation is already true in the model
+        //  depIndex is the index of the least significant variable that this evaluation relies upon
+        depIndex = riter.getNumTerms()-1;
+        eval = fmig->evaluate( d_qe->getTermDatabase()->getInstConstantBody( f ), depIndex, &riter );
+        if( eval==1 ){
+          Debug("fmf-model-eval") << "  Returned success with depIndex = " << depIndex << std::endl;
+        }else{
+          Debug("fmf-model-eval") << "  Returned " << (eval==-1 ? "failure" : "unknown") << ", depIndex = " << depIndex << std::endl;
+        }
+        if( eval==1 ){
+          //instantiation is already true -> skip
+          riter.increment2( depIndex );
+        }else{
+          //instantiation was not shown to be true, construct the match
+          InstMatch m;
+          for( int i=0; i<riter.getNumTerms(); i++ ){
+            m.set( d_qe, f, riter.d_index_order[i], riter.getTerm( i ) );
+          }
+          Debug("fmf-model-eval") << "* Add instantiation " << m << std::endl;
+          //add as instantiation
+          if( d_qe->addInstantiation( f, m ) ){
+            d_addedLemmas++;
+            //if the instantiation is show to be false, and we wish to skip multiple instantiations at once
+            if( eval==-1 ){
+              riter.increment2( depIndex );
+            }else{
+              riter.increment();
+            }
+          }else{
+            Debug("fmf-model-eval") << "* Failed Add instantiation " << m << std::endl;
+            riter.increment();
+          }
+        }
+      }
+      //print debugging information
+      if( fmig ){
+        d_statistics.d_eval_formulas += fmig->d_eval_formulas;
+        d_statistics.d_eval_uf_terms += fmig->d_eval_uf_terms;
+        d_statistics.d_eval_lits += fmig->d_eval_lits;
+        d_statistics.d_eval_lits_unknown += fmig->d_eval_lits_unknown;
+      }
+      Trace("inst-fmf-ei") << "Finished: " << std::endl;
+      Trace("inst-fmf-ei") << "   Inst Tried: " << d_triedLemmas << std::endl;
+      Trace("inst-fmf-ei") << "   Inst Added: " << d_addedLemmas << std::endl;
+      if( d_addedLemmas>1000 ){
+        Trace("model-engine-warn") << "WARNING: many instantiations produced for " << f << ": " << std::endl;
+        Trace("model-engine-warn") << "   Inst Tried: " << d_triedLemmas << std::endl;
+        Trace("model-engine-warn") << "   Inst Added: " << d_addedLemmas << std::endl;
+        Trace("model-engine-warn") << std::endl;
+      }
+    }
+     //if the iterator is incomplete, we will return unknown instead of sat if no instantiations are added this round
+    d_incomplete_check = riter.d_incomplete;
+    return true;
+  }else{
+    return false;
+  }
+}
 
 
 

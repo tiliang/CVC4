@@ -37,15 +37,20 @@ public:
   QModelBuilder( context::Context* c, QuantifiersEngine* qe );
   virtual ~QModelBuilder(){}
   // is quantifier active?
-  virtual bool isQuantifierActive( Node f ) { return true; }
+  virtual bool isQuantifierActive( Node f );
   //do exhaustive instantiation
-  virtual bool doExhaustiveInstantiation( FirstOrderModel * fm, Node f, int effort, int & lemmas ) { return false; }
+  virtual bool doExhaustiveInstantiation( FirstOrderModel * fm, Node f, int effort ) { return false; }
   //whether to construct model
   virtual bool optUseModel();
-  /** number of lemmas generated while building model */
-  int d_addedLemmas;
+  //whether to construct model at fullModel = true
+  virtual bool optBuildAtFullModel() { return false; }
   //consider axioms
   bool d_considerAxioms;
+  /** number of lemmas generated while building model */
+  //is the exhaustive instantiation incomplete?
+  bool d_incomplete_check;
+  int d_addedLemmas;
+  int d_triedLemmas;
   /** exist instantiation ? */
   virtual bool existsInstantiation( Node f, InstMatch& m, bool modEq = true, bool modInst = false ) { return false; }
   //debug model
@@ -133,6 +138,10 @@ public:
     IntStat d_num_partial_quants_init;
     IntStat d_init_inst_gen_lemmas;
     IntStat d_inst_gen_lemmas;
+    IntStat d_eval_formulas;
+    IntStat d_eval_uf_terms;
+    IntStat d_eval_lits;
+    IntStat d_eval_lits_unknown;
     Statistics();
     ~Statistics();
   };
@@ -147,6 +156,8 @@ public:
   bool didInstGen() { return d_didInstGen; }
   // is quantifier active?
   bool isQuantifierActive( Node f );
+  //do exhaustive instantiation
+  bool doExhaustiveInstantiation( FirstOrderModel * fm, Node f, int effort );
 
   //temporary stats
   int d_numQuantSat;

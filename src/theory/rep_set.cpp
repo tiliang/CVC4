@@ -139,7 +139,6 @@ bool RepSetIterator::initialize(){
     //store default domain
     d_domain.push_back( RepDomain() );
     TypeNode tn = d_types[i];
-    bool isSet = false;
     if( tn.isSort() ){
       if( !d_rep_set->hasType( tn ) ){
         Node var = NodeManager::currentNM()->mkSkolem( "repSet_$$", tn, "is a variable created by the RepSetIterator" );
@@ -147,31 +146,36 @@ bool RepSetIterator::initialize(){
         d_rep_set->add( var );
       }
     }else if( tn.isInteger() ){
+      bool inc = false;
       //check if it is bound
       if( d_owner.getKind()==FORALL && d_qe && d_qe->getBoundedIntegers() ){
         if( d_qe->getBoundedIntegers()->isBoundVar( d_owner, d_owner[0][i] ) ){
           Trace("bound-int-rsi") << "Rep set iterator: variable #" << i << " is bounded integer." << std::endl;
           d_enum_type.push_back( ENUM_RANGE );
-          isSet = true;
         }else{
-          Trace("fmf-incomplete") << "Incomplete because of integer quantification, no bounds found." << std::endl;
-          d_incomplete = true;
+          inc = true;
         }
       }else{
-        Trace("fmf-incomplete") << "Incomplete because of integer quantification." << std::endl;
-        d_incomplete = true;
+        inc = true;
       }
-    }else if( tn.isReal() ){
-      Trace("fmf-incomplete") << "Incomplete because of infinite type " << tn << std::endl;
-      d_incomplete = true;
-    //enumerate if the sort is reasonably small, the upper bound of 128 is chosen arbitrarily for now
-    }else if( tn.getCardinality().isFinite() && tn.getCardinality().getFiniteCardinality().toUnsignedInt()<=128 ){
+      if( inc ){
+        //check if it is otherwise bound
+        if( d_bounds[0].find(i)!=d_bounds[0].end() && d_bounds[1].find(i)!=d_bounds[1].end() ){
+          Trace("bound-int-rsi") << "Rep set iterator: variable #" << i << " is bounded." << std::endl;
+          d_enum_type.push_back( ENUM_RANGE );
+        }else{
+          Trace("fmf-incomplete") << "Incomplete because of integer quantification of " << d_owner[0][i] << "." << std::endl;
+          d_incomplete = true;
+        }
+      }
+    //enumerate if the sort is reasonably small, the upper bound of 1000 is chosen arbitrarily for now
+    }else if( tn.getCardinality().isFinite() && tn.getCardinality().getFiniteCardinality().toUnsignedInt()<=1000 ){
       d_rep_set->complete( tn );
     }else{
-      Trace("fmf-incomplete") << "Incomplete because of unknown type " << tn << std::endl;
+      Trace("fmf-incomplete") << "Incomplete because of quantification of type " << tn << std::endl;
       d_incomplete = true;
     }
-    if( !isSet ){
+    if( d_enum_type.size()<=i ){
       d_enum_type.push_back( ENUM_DOMAIN_ELEMENTS );
       if( d_rep_set->hasType( tn ) ){
         for( size_t j=0; j<d_rep_set->d_type_reps[tn].size(); j++ ){
@@ -182,7 +186,7 @@ bool RepSetIterator::initialize(){
       }
     }
   }
-  //must set a variable index order
+  //must set a variable index order based on bounded integers
   if (d_owner.getKind()==FORALL && d_qe && d_qe->getBoundedIntegers()) {
     Trace("bound-int-rsi") << "Calculating variable order..." << std::endl;
     std::vector< int > varOrder;
@@ -211,6 +215,7 @@ bool RepSetIterator::initialize(){
     Trace("bound-int-rsi") << std::endl;
     setIndexOrder(indexOrder);
   }
+  //now reset the indices
   for (unsigned i=0; i<d_index.size(); i++) {
     if (!resetIndex(i, true)){
       break;
@@ -245,10 +250,25 @@ bool RepSetIterator::resetIndex( int i, bool initial ) {
   Trace("bound-int-rsi") << "Reset " << i << " " << ii << " " << initial << std::endl;
   //determine the current range
   if( d_enum_type[ii]==ENUM_RANGE ){
-    if( initial || !d_qe->getBoundedIntegers()->isGroundRange( d_owner, d_owner[0][ii] ) ){
+    if( initial || ( d_qe->getBoundedIntegers() && !d_qe->getBoundedIntegers()->isGroundRange( d_owner, d_owner[0][ii] ) ) ){
       Trace("bound-int-rsi") << "Getting range of " << d_owner[0][ii] << std::endl;
       Node l, u;
-      d_qe->getBoundedIntegers()->getBoundValues( d_owner, d_owner[0][ii], this, l, u );
+      if( d_qe->getBoundedIntegers() && d_qe->getBoundedIntegers()->isBoundVar( d_owner, d_owner[0][ii] ) ){
+        d_qe->getBoundedIntegers()->getBoundValues( d_owner, d_owner[0][ii], this, l, u );
+      }
+      for( unsigned b=0; b<2; b++ ){
+        if( d_bounds[b].find(ii)!=d_bounds[b].end() ){
+          Trace("bound-int-rsi") << "May further limit bound(" << b << ") based on " << d_bounds[b][ii] << std::endl;
+          if( b==0 && (l.isNull() || d_bounds[b][ii].getConst<Rational>() > l.getConst<Rational>()) ){
+            l = d_bounds[b][ii];
+          }else if( b==1 && (u.isNull() || d_bounds[b][ii].getConst<Rational>() <= u.getConst<Rational>()) ){
+            u = NodeManager::currentNM()->mkNode( MINUS, d_bounds[b][ii],
+                                                  NodeManager::currentNM()->mkConst( Rational(1) ) );
+            u = Rewriter::rewrite( u );
+          }
+        }
+      }
+
       if( l.isNull() || u.isNull() ){
         //failed, abort the iterator
         d_index.clear();
@@ -276,7 +296,7 @@ bool RepSetIterator::resetIndex( int i, bool initial ) {
   return true;
 }
 
-void RepSetIterator::increment2( int counter ){
+int RepSetIterator::increment2( int counter ){
   Assert( !isFinished() );
 #ifdef DISABLE_EVAL_SKIP_MULTIPLE
   counter = (int)d_index.size()-1;
@@ -295,17 +315,27 @@ void RepSetIterator::increment2( int counter ){
     d_index.clear();
   }else{
     d_index[counter]++;
+    bool emptyDomain = false;
     for( int i=(int)d_index.size()-1; i>counter; i-- ){
       if (!resetIndex(i)){
         break;
+      }else if( domainSize(i)<=0 ){
+        emptyDomain = true;
       }
     }
+    if( emptyDomain ){
+      Trace("rsi-debug") << "This is an empty domain, increment again." << std::endl;
+      return increment();
+    }
   }
+  return counter;
 }
 
-void RepSetIterator::increment(){
+int RepSetIterator::increment(){
   if( !isFinished() ){
-    increment2( (int)d_index.size()-1 );
+    return increment2( (int)d_index.size()-1 );
+  }else{
+    return -1;
   }
 }
 

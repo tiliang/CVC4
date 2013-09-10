@@ -194,14 +194,20 @@ void TermDb::addTerm( Node n, std::set< Node >& added, bool withinQuant ){
 Node TermDb::getModelBasisTerm( TypeNode tn, int i ){
   if( d_model_basis_term.find( tn )==d_model_basis_term.end() ){
     Node mbt;
-    if( options::fmfFreshDistConst() || d_type_map[ tn ].empty() ){
-      std::stringstream ss;
-      ss << Expr::setlanguage(options::outputLanguage());
-      ss << "e_" << tn;
-      mbt = NodeManager::currentNM()->mkSkolem( ss.str(), tn, "is a model basis term" );
-      Trace("mkVar") << "ModelBasis:: Make variable " << mbt << " : " << tn << std::endl;
+    if( tn.isInteger() || tn.isReal() ){
+      mbt = NodeManager::currentNM()->mkConst( Rational( 0 ) );
+    }else if( !tn.isSort() ){
+      mbt = tn.mkGroundTerm();
     }else{
-      mbt = d_type_map[ tn ][ 0 ];
+      if( options::fmfFreshDistConst() || d_type_map[ tn ].empty() ){
+        std::stringstream ss;
+        ss << Expr::setlanguage(options::outputLanguage());
+        ss << "e_" << tn;
+        mbt = NodeManager::currentNM()->mkSkolem( ss.str(), tn, "is a model basis term" );
+        Trace("mkVar") << "ModelBasis:: Make variable " << mbt << " : " << tn << std::endl;
+      }else{
+        mbt = d_type_map[ tn ][ 0 ];
+      }
     }
     ModelBasisAttribute mba;
     mbt.setAttribute(mba,true);
@@ -429,16 +435,19 @@ Node TermDb::getSkolemizedBody( Node f ){
 Node TermDb::getFreeVariableForInstConstant( Node n ){
   TypeNode tn = n.getType();
   if( d_free_vars.find( tn )==d_free_vars.end() ){
-    //if integer or real, make zero
-    if( tn.isInteger() || tn.isReal() ){
-      Rational z(0);
-      d_free_vars[tn] = NodeManager::currentNM()->mkConst( z );
-    }else{
-      if( d_type_map[ tn ].empty() ){
-        d_free_vars[tn] = NodeManager::currentNM()->mkSkolem( "freevar_$$", tn, "is a free variable created by termdb" );
-        Trace("mkVar") << "FreeVar:: Make variable " << d_free_vars[tn] << " : " << tn << std::endl;
+	for( unsigned i=0; i<d_type_map[ tn ].size(); i++ ){
+	  if( !quantifiers::TermDb::hasInstConstAttr(d_type_map[ tn ][ i ]) ){
+	    d_free_vars[tn] = d_type_map[ tn ][ i ];
+	  }
+	}
+	if( d_free_vars.find( tn )==d_free_vars.end() ){
+      //if integer or real, make zero
+      if( tn.isInteger() || tn.isReal() ){
+        Rational z(0);
+        d_free_vars[tn] = NodeManager::currentNM()->mkConst( z );
       }else{
-        d_free_vars[tn] = d_type_map[ tn ][ 0 ];
+	    d_free_vars[tn] = NodeManager::currentNM()->mkSkolem( "freevar_$$", tn, "is a free variable created by termdb" );
+	    Trace("mkVar") << "FreeVar:: Make variable " << d_free_vars[tn] << " : " << tn << std::endl;
       }
     }
   }
