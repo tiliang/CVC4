@@ -35,6 +35,7 @@ namespace strings {
 
 class TheoryStrings : public Theory {
   typedef context::CDChunkList<Node> NodeList;
+  typedef context::CDHashMap<Node, NodeList*, NodeHashFunction> NodeListMap;
   public:
 
   TheoryStrings(context::Context* c, context::UserContext* u, OutputChannel& out, Valuation valuation, const LogicInfo& logicInfo, QuantifiersEngine* qe);
@@ -118,11 +119,18 @@ class TheoryStrings : public Theory {
 	//list of pairs of nodes to merge
 	  std::map< Node, Node > d_pending_exp;
 	  std::vector< Node > d_pending;
+	  std::vector< Node > d_lemma_cache;
   bool hasTerm( Node a );
   bool areEqual( Node a, Node b );
   /** inferences */
   NodeList d_infer;
   NodeList d_infer_exp;
+  //map of pairs of terms that have the same normal form
+  NodeListMap d_nf_pairs;
+  void addNormalFormPair( Node n1, Node n2 );
+  bool isNormalFormPair( Node n1, Node n2 );
+  bool isNormalFormPair2( Node n1, Node n2 );
+
   /////////////////////////////////////////////////////////////////////////////
   // MODEL GENERATION
   /////////////////////////////////////////////////////////////////////////////
@@ -152,6 +160,7 @@ class TheoryStrings : public Theory {
     EqcInfo( context::Context* c );
     ~EqcInfo(){}
     //constant in this eqc
+    context::CDO< Node > d_const_term;
     context::CDO< Node > d_length_term;
 	context::CDO< unsigned > d_cardinality_lem_k;
   };
@@ -162,6 +171,9 @@ class TheoryStrings : public Theory {
   std::map< Node, bool > d_length_inst;
   private:
 	std::map< Node, std::vector< Node > > d_normal_forms;
+    std::map< Node, std::vector< Node > > d_normal_forms_exp;
+    void getNormalForms(Node &eqc, std::vector< Node > & visited, std::vector< Node > & nf,
+	std::vector< std::vector< Node > > &normal_forms,  std::vector< std::vector< Node > > &normal_forms_exp, std::vector< Node > &normal_form_src);
 	void normalizeEquivalenceClass( Node n, std::vector< Node > & visited, std::vector< Node > & nf, std::vector< Node > & nf_exp );
 	bool areLengthsEqual( Node n1, Node n2 ); //TODO
   public:
