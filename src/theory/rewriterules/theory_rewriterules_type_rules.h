@@ -42,7 +42,7 @@ public:
                                      bool check)
     throw(TypeCheckingExceptionPrivate) {
     Debug("typecheck-r") << "type check for rr " << n << std::endl;
-    Assert(n.getKind() == kind::REWRITE_RULE && n.getNumChildren()==3 );
+    Assert(n.getKind() == kind::REWRITE_RULE && n.getNumChildren() == 4 );
     if( check ){
       if( n[ 0 ].getType(check)!=nodeManager->boundVarListType() ){
         throw TypeCheckingExceptionPrivate(n[0],
@@ -56,6 +56,10 @@ public:
           TypeNode(nodeManager->mkTypeConst<TypeConstant>(RRHB_TYPE))){
         throw TypeCheckingExceptionPrivate(n[2],
                      "not a correct rewrite rule");
+      }
+      if( n[3].getKind() != kind::REWRITE_PRIORITY ){
+        throw TypeCheckingExceptionPrivate(n[3],
+                     "expected a rewrite priority in the fourth argument");
       }
     }
     return nodeManager->booleanType();

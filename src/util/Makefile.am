@@ -89,7 +89,8 @@ libutil_la_SOURCES = \
 	util_model.cpp \
 	sort_inference.h \
 	sort_inference.cpp \
-	regexp.h
+	regexp.h \
+	rewrite_priority.h
 
 libstatistics_la_SOURCES = \
 	statistics_registry.h \

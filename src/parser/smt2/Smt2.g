@@ -581,6 +581,7 @@ rewriterulesCommand[CVC4::Command*& cmd]
   std::vector<Expr> args, guards, heads, triggers;
   Expr head, body, expr, expr2, bvl;
   Kind kind;
+  CVC4::RewritePriority priority(10);
 }
   : /* rewrite rules */
     REWRITE_RULE_TOK
@@ -598,7 +599,7 @@ rewriterulesCommand[CVC4::Command*& cmd]
     }
     LPAREN_TOK ( pattern[expr] { triggers.push_back( expr ); } )* RPAREN_TOK
     LPAREN_TOK (termList[guards,expr])? RPAREN_TOK
-    term[head, expr2] term[body, expr2]
+    term[head, expr2] term[body, expr2] ( ATTRIBUTE_PRIORITY_TOK INTEGER_LITERAL { priority = CVC4::RewritePriority(AntlrInput::tokenText($INTEGER_LITERAL)); } )?
     {
       args.clear();
       args.push_back(head);
@@ -622,6 +623,10 @@ rewriterulesCommand[CVC4::Command*& cmd]
         args.push_back(expr2); break;
       };
       args.push_back(expr);
+      /* priority */
+      expr2 = MK_CONST(priority);
+      args.push_back(expr2);
+
       expr = MK_EXPR(CVC4::kind::REWRITE_RULE, args);
       cmd = new AssertCommand(expr); }
     /* propagation rule */
@@ -640,7 +645,7 @@ rewriterulesCommand[CVC4::Command*& cmd]
     LPAREN_TOK ( pattern[expr] { triggers.push_back( expr ); } )* RPAREN_TOK
     LPAREN_TOK (termList[guards,expr])? RPAREN_TOK
     LPAREN_TOK (termList[heads,expr])? RPAREN_TOK
-    term[body, expr2]
+    term[body, expr2] ( ATTRIBUTE_PRIORITY_TOK INTEGER_LITERAL { priority = CVC4::RewritePriority(AntlrInput::tokenText($INTEGER_LITERAL)); } )?
     {
       args.clear();
       /* heads */
@@ -673,14 +678,19 @@ rewriterulesCommand[CVC4::Command*& cmd]
         args.push_back(expr2); break;
       };
       args.push_back(expr);
+      /* priority */
+      expr2 = MK_CONST(priority);
+      args.push_back(expr2);
+
       expr = MK_EXPR(CVC4::kind::REWRITE_RULE, args);
-      cmd = new AssertCommand(expr); }
+      cmd = new AssertCommand(expr);
+    }
   ;
 
 rewritePropaKind[CVC4::Kind& kind]
   :
   REDUCTION_RULE_TOK    { $kind = CVC4::kind::RR_REDUCTION; }
-  | PROPAGATION_RULE_TOK  { $kind = CVC4::kind::RR_DEDUCTION; }
+  | DEDUCTION_RULE_TOK  { $kind = CVC4::kind::RR_DEDUCTION; }
   ;
 
 pattern[CVC4::Expr& expr]
@@ -714,7 +724,7 @@ simpleSymbolicExprNoKeyword[CVC4::SExpr& sexpr]
 //	}
   | symbol[s,CHECK_NONE,SYM_SORT]
     { sexpr = SExpr(SExpr::Keyword(s)); }
-  | tok=(ASSERT_TOK | CHECKSAT_TOK | DECLARE_FUN_TOK | DECLARE_SORT_TOK | DEFINE_FUN_TOK | DEFINE_SORT_TOK | GET_VALUE_TOK | GET_ASSIGNMENT_TOK | GET_ASSERTIONS_TOK | GET_PROOF_TOK | GET_UNSAT_CORE_TOK | EXIT_TOK | SET_LOGIC_TOK | SET_INFO_TOK | GET_INFO_TOK | SET_OPTION_TOK | GET_OPTION_TOK | PUSH_TOK | POP_TOK | DECLARE_DATATYPES_TOK | GET_MODEL_TOK | ECHO_TOK | REWRITE_RULE_TOK | REDUCTION_RULE_TOK | PROPAGATION_RULE_TOK | SIMPLIFY_TOK)
+  | tok=(ASSERT_TOK | CHECKSAT_TOK | DECLARE_FUN_TOK | DECLARE_SORT_TOK | DEFINE_FUN_TOK | DEFINE_SORT_TOK | GET_VALUE_TOK | GET_ASSIGNMENT_TOK | GET_ASSERTIONS_TOK | GET_PROOF_TOK | GET_UNSAT_CORE_TOK | EXIT_TOK | SET_LOGIC_TOK | SET_INFO_TOK | GET_INFO_TOK | SET_OPTION_TOK | GET_OPTION_TOK | PUSH_TOK | POP_TOK | DECLARE_DATATYPES_TOK | GET_MODEL_TOK | ECHO_TOK | REWRITE_RULE_TOK | REDUCTION_RULE_TOK | DEDUCTION_RULE_TOK | SIMPLIFY_TOK)
     { sexpr = SExpr(SExpr::Keyword(AntlrInput::tokenText($tok))); }
   | builtinOp[k]
     { std::stringstream ss;
@@ -1523,7 +1533,7 @@ GET_MODEL_TOK : 'get-model';
 ECHO_TOK : 'echo';
 REWRITE_RULE_TOK : 'assert-rewrite';
 REDUCTION_RULE_TOK : 'assert-reduction';
-PROPAGATION_RULE_TOK : 'assert-propagation';
+DEDUCTION_RULE_TOK : 'assert-deduction';
 DECLARE_SORTS_TOK : 'declare-sorts';
 DECLARE_FUNS_TOK : 'declare-funs';
 DECLARE_PREDS_TOK : 'declare-preds';
@@ -1536,6 +1546,7 @@ INCLUDE_TOK : 'include';
 ATTRIBUTE_PATTERN_TOK : ':pattern';
 ATTRIBUTE_NO_PATTERN_TOK : ':no-pattern';
 ATTRIBUTE_NAMED_TOK : ':named';
+ATTRIBUTE_PRIORITY_TOK : ':priority';
 
 // operators (NOTE: theory symbols go here)
 AMPERSAND_TOK     : '&';

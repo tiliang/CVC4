@@ -48,6 +48,7 @@ typedef std::hash_map<TNode, TNode, TNodeHashFunction> TCache;
     // constant
     const size_t id; //for debugging
     const bool d_split;
+    const int d_priority; //for priority
     mutable Trigger trigger;
     std::vector<Node> guards;
     mutable std::vector<Node> to_remove; /** terms to remove */

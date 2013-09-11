@@ -172,9 +172,18 @@ void TheoryRewriteRules::addRewriteRule(const Node r)
     break;
   case kind::RR_REDUCTION:
     /** Add head to remove */
+    switch(head.getKind()){
+    case kind::AND:
       for(Node::iterator i = head.begin(); i != head.end(); ++i) {
         to_remove.push_back(*i);
       };
+      break;
+    default:
+      if (head != d_true){
+        to_remove.push_back(head);
+      }
+    }
+    /** go to the next case */
   case kind::RR_DEDUCTION:
     /** Add head to guards and pattern */
     switch(head.getKind()){
@@ -320,10 +329,10 @@ RewriteRule::RewriteRule(TheoryRewriteRules & re,
                          std::vector<Node> & g, Node b, TNode nt,
                          std::vector<Node> & fv,std::vector<Node> & iv,
                          std::vector<Node> & to_r, bool drr) :
-  id(++id_next), d_split(willDecide(b)),
+  id(++id_next), d_split(willDecide(b)), d_priority(1),
   trigger(tr), body(b), new_terms(nt), free_vars(), inst_vars(),
   body_match(re.getSatContext()),trigger_for_body_match(applymatcher),
-  d_cache(re.getSatContext(),re.getQuantifiersEngine()), directrr(drr){
+  d_cache(re.getSatContext(), re.getQuantifiersEngine()), directrr(drr) {
   free_vars.swap(fv); inst_vars.swap(iv); guards.swap(g); to_remove.swap(to_r);
 };
 
