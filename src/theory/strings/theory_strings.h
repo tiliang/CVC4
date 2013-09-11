@@ -115,6 +115,8 @@ class TheoryStrings : public Theory {
     context::CDO<bool> d_conflict;
 
 	Node d_emptyString;
+	Node d_true;
+	Node d_false;
 	Node d_zero;
 	//list of pairs of nodes to merge
 	  std::map< Node, Node > d_pending_exp;
@@ -134,6 +136,7 @@ class TheoryStrings : public Theory {
   NodeListMap d_ind_map1;
   NodeListMap d_ind_map2;
   NodeListMap d_ind_map_exp;
+  NodeListMap d_ind_map_lemma;
   void addInductiveEquation( Node x, Node y, Node z, Node exp );
 
   /////////////////////////////////////////////////////////////////////////////
@@ -181,6 +184,10 @@ class TheoryStrings : public Theory {
 	std::vector< std::vector< Node > > &normal_forms,  std::vector< std::vector< Node > > &normal_forms_exp, std::vector< Node > &normal_form_src);
 	void normalizeEquivalenceClass( Node n, std::vector< Node > & visited, std::vector< Node > & nf, std::vector< Node > & nf_exp );
 	bool areLengthsEqual( Node n1, Node n2 ); //TODO
+
+	bool checkNormalForms();
+	bool checkCardinality();
+	bool checkInductiveEquations();
   public:
   void preRegisterTerm(TNode n);
   void check(Effort e);

@@ -42,7 +42,8 @@ TheoryStrings::TheoryStrings(context::Context* c, context::UserContext* u, Outpu
 	d_nf_pairs(c),
 	d_ind_map1(c),
 	d_ind_map2(c),
-	d_ind_map_exp(c)
+	d_ind_map_exp(c),
+	d_ind_map_lemma(c)
 {
 	// The kinds we are treating as function application in congruence
 	d_equalityEngine.addFunctionKind(kind::STRING_IN_REGEXP);
@@ -51,6 +52,8 @@ TheoryStrings::TheoryStrings(context::Context* c, context::UserContext* u, Outpu
 
 	d_zero = NodeManager::currentNM()->mkConst( Rational( 0 ) );
 	d_emptyString = NodeManager::currentNM()->mkConst( ::CVC4::String("") );
+	d_true = NodeManager::currentNM()->mkConst( true );
+	d_false = NodeManager::currentNM()->mkConst( false );
 }
 
 TheoryStrings::~TheoryStrings() {
@@ -197,9 +200,6 @@ void TheoryStrings::check(Effort e) {
   bool polarity;
   TNode atom;
 
-  int cardinality = options::stringCharCardinality();
-  Trace("strings-solve-debug2") << "get cardinality: " << cardinality << endl;
-
  // Trace("strings-process") << "Theory of strings, check : " << e << std::endl;
   Trace("strings-check") << "Theory of strings, check : " << e << std::endl;
   while ( !done() && !d_conflict)
@@ -246,246 +246,67 @@ void TheoryStrings::check(Effort e) {
 
   bool addedLemma = false;
   if( e == EFFORT_FULL && !d_conflict ) {
-  eq::EqClassesIterator eqcs_i = eq::EqClassesIterator( &d_equalityEngine );
-  while( !eqcs_i.isFinished() ){
-	Node eqc = (*eqcs_i);
-	//if eqc.getType is string
-	if (eqc.getType().isString()) {
-		//EqcInfo* ei = getOrMakeEqcInfo( eqc, true );
-		//get the constant for the equivalence class
-		//int c_len = ...;
-		eq::EqClassIterator eqc_i = eq::EqClassIterator( eqc, &d_equalityEngine );
-		while( !eqc_i.isFinished() ){
-		  Node n = (*eqc_i);
-
-		  //if n is concat, and
-		  //if n has not instantiatied the concat..length axiom
-		  //then, add lemma
-		  if( n.getKind() == kind::STRING_CONCAT || n.getKind() == kind::CONST_STRING ){
-			if( d_length_inst.find(n)==d_length_inst.end() ){
-				d_length_inst[n] = true;
-				addedLemma = true;
-				Trace("strings-debug") << "get n: " << n << endl;
-				Node sk = NodeManager::currentNM()->mkSkolem( "lsym_$$", n.getType(), "created for concat lemma" );
-				Node eq = NodeManager::currentNM()->mkNode( kind::EQUAL, sk, n );
-				eq = Rewriter::rewrite(eq);
-				Trace("strings-lemma") << "Strings: Add lemma " << eq << std::endl;
-				d_out->lemma(eq);
-				Node skl = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, sk );
-				Node lsum;
-				if( n.getKind() == kind::STRING_CONCAT ){
-					//add lemma
-					std::vector<Node> node_vec;
-					for( unsigned i=0; i<n.getNumChildren(); i++ ) {
-						Node lni = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, n[i] );
-						node_vec.push_back(lni);
-					}
-					lsum = NodeManager::currentNM()->mkNode( kind::PLUS, node_vec );
-				}else{
-					//add lemma
-					lsum = NodeManager::currentNM()->mkConst( ::CVC4::Rational( n.getConst<String>().size() ) );
-				}
-				Node ceq = NodeManager::currentNM()->mkNode( kind::EQUAL, skl, lsum );
-				ceq = Rewriter::rewrite(ceq);
-				Trace("strings-lemma") << "Strings: Add lemma " << ceq << std::endl;
-				d_out->lemma(ceq);
-			}
-		  }
-		  ++eqc_i;
-		}
-	}
-	++eqcs_i;
-  }
-  if( !addedLemma ){
-	  Trace("strings-process") << "Normalize equivalence classes...." << std::endl;
-	  eq::EqClassesIterator eqcs2_i = eq::EqClassesIterator( &d_equalityEngine );
-	  while( !eqcs2_i.isFinished() ){
-		Node eqc = (*eqcs2_i);
-		//if (eqc.getType().isString()) {
-			eq::EqClassIterator eqc2_i = eq::EqClassIterator( eqc, &d_equalityEngine );
-			Trace("strings-eqc") << "Eqc( " << eqc << " ) : ";
-			while( !eqc2_i.isFinished() ) {
-				Trace("strings-eqc") << (*eqc2_i) << " ";
-				++eqc2_i;
-			}
-			Trace("strings-eqc") << std::endl;
-		//}
-		++eqcs2_i;
-	  }
-
-	  bool addedFact = false;
-	  do {
-		//calculate normal forms for each equivalence class, possibly adding splitting lemmas
-		d_normal_forms.clear();
-		d_normal_forms_exp.clear();
-		std::map< Node, Node > nf_to_eqc;
-		std::map< Node, Node > eqc_to_exp;
-		  eq::EqClassesIterator eqcs_i = eq::EqClassesIterator( &d_equalityEngine );
-		  d_lemma_cache.clear();
-		  while( !eqcs_i.isFinished() ){
-			Node eqc = (*eqcs_i);
-			//if eqc.getType is string
-			if (eqc.getType().isString()) {
-				Trace("strings-process") << "Verify normal forms are the same for " << eqc << std::endl;
-				std::vector< Node > visited;
-				std::vector< Node > nf;
-				std::vector< Node > nf_exp;
-				normalizeEquivalenceClass(eqc, visited, nf, nf_exp);
-				if( d_conflict ){
-					return;
-				}else if ( d_pending.empty() && d_lemma_cache.empty() ){
-					Node nf_term;
-					if( nf.size()==0 ){
-						nf_term = d_emptyString;
-					}else if( nf.size()==1 ) {
-						nf_term = nf[0];
-					} else {
-						nf_term = NodeManager::currentNM()->mkNode( kind::STRING_CONCAT, nf );
-					}
-					nf_term = Rewriter::rewrite( nf_term );
-					Trace("strings-debug") << "Make nf_term_exp..." << std::endl;
-					Node nf_term_exp = nf_exp.empty() ? NodeManager::currentNM()->mkConst(true) :
-										nf_exp.size()==1 ? nf_exp[0] : NodeManager::currentNM()->mkNode( kind::AND, nf_exp );
-					if( nf_to_eqc.find(nf_term)!=nf_to_eqc.end() ){
-						//Trace("strings-debug") << "Merge because of normal form : " << eqc << " and " << nf_to_eqc[nf_term] << " both have normal form " << nf_term << std::endl;
-						//two equivalence classes have same normal form, merge
-						Node eq_exp = NodeManager::currentNM()->mkNode( kind::AND, nf_term_exp, eqc_to_exp[nf_to_eqc[nf_term]] );
-						Node eq = NodeManager::currentNM()->mkNode( kind::EQUAL, eqc, nf_to_eqc[nf_term] );
-						Trace("strings-lemma") << "Strings (by normal forms) : Infer " << eq << " from " << eq_exp << std::endl;
-						//d_equalityEngine.assertEquality( eq, true, eq_exp );
-						d_pending.push_back( eq );
-						d_pending_exp[eq] = eq_exp;
-						d_infer.push_back(eq);
-						d_infer_exp.push_back(eq_exp);
-					}else{
-						nf_to_eqc[nf_term] = eqc;
-						eqc_to_exp[eqc] = nf_term_exp;
-					}
-				}
-				Trace("strings-process") << "Done verifying normal forms are the same for " << eqc << std::endl;
-			}
-			++eqcs_i;
-		  }
-		  addedFact = !d_pending.empty();
-		  doPendingFacts();
-		  if( !d_conflict ){
-			  for( unsigned i=0; i<d_lemma_cache.size(); i++ ){
-				  Trace("strings-pending") << "Process pending lemma : " << d_lemma_cache[i] << std::endl;
-				  addedLemma = true;
-				  d_out->lemma( d_lemma_cache[i] );
-			  }
-		  }
-	  } while (!d_conflict && addedFact);
-  }
-  // begin -- solve the cardinality
-  if(!d_conflict && !addedLemma) {
 	  eq::EqClassesIterator eqcs_i = eq::EqClassesIterator( &d_equalityEngine );
-	  unsigned leqc_counter = 0;
-	  std::map< Node, unsigned > eqc_to_leqc;
-	  std::map< unsigned, Node > leqc_to_eqc;
-	  std::map< unsigned, std::vector< Node > > eqc_to_strings;
 	  while( !eqcs_i.isFinished() ){
 		Node eqc = (*eqcs_i);
 		//if eqc.getType is string
 		if (eqc.getType().isString()) {
-			EqcInfo* ei = getOrMakeEqcInfo( eqc, true );
-		    Node lt = ei->d_length_term;
-			if( !lt.isNull() ){
-			  lt = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, lt );
-			  Node r = d_equalityEngine.getRepresentative( lt );
-			  if( eqc_to_leqc.find( r )==eqc_to_leqc.end() ){
-			    eqc_to_leqc[r] = leqc_counter;
-				leqc_to_eqc[leqc_counter] = r;
-				leqc_counter++;
-			  }
-			  eqc_to_strings[ eqc_to_leqc[r] ].push_back( eqc );
-			}else{
-			  eqc_to_strings[leqc_counter].push_back( eqc );
-              leqc_counter++;
-			}
-	    }
-		++eqcs_i;
-	  }
-	  for( std::map< unsigned, std::vector< Node > >::iterator it = eqc_to_strings.begin(); it != eqc_to_strings.end(); ++it ){
-	    Node lr = leqc_to_eqc[it->first];
-		Trace("string-cardinality") << "Number of strings with length equal to " << lr << " is " << it->second.size() << std::endl;
-		// size > c^k
-		double k = std::log( it->second.size() ) / log((double) cardinality);
-		unsigned int int_k = (unsigned int)k;
-		Node k_node = NodeManager::currentNM()->mkConst( ::CVC4::Rational( int_k ) );
-		//double c_k = pow ( (double)cardinality, (double)lr );
-		if( it->second.size() > 1 ) {
-			bool allDisequal = true;
-			for( std::vector< Node >::iterator itr1 = it->second.begin();
-			      itr1 != it->second.end(); ++itr1) {
-				for( std::vector< Node >::iterator itr2 = itr1 + 1;
-					  itr2 != it->second.end(); ++itr2) {
-					if(!d_equalityEngine.areDisequal( *itr1, *itr2, false )) {
-						allDisequal = false;
-						// add split lemma
-						Node eq = NodeManager::currentNM()->mkNode( kind::EQUAL, *itr1, *itr2 );
-						Node neq = NodeManager::currentNM()->mkNode( kind::NOT, eq );
-						Node lemma_or = NodeManager::currentNM()->mkNode( kind::OR, eq, neq );
-						Trace("strings-lemma") << "Strings split lemma : " << lemma_or << std::endl;
-						d_out->lemma(lemma_or);
-						return;
-					}
-			    }
-		    }
-			if(allDisequal) {
-				EqcInfo* ei = getOrMakeEqcInfo( lr, true );
-				Trace("string-cardinality") << "Previous cardinality used for " << lr << " is " << ei->d_cardinality_lem_k << std::endl;
-				if( int_k > ei->d_cardinality_lem_k.get() ){
-					//add cardinality lemma
-					Node dist = NodeManager::currentNM()->mkNode( kind::DISTINCT, it->second );
-					std::vector< Node > vec_node;
-					vec_node.push_back( dist );
-					for( std::vector< Node >::iterator itr1 = it->second.begin();
-						  itr1 != it->second.end(); ++itr1) {
-						Node len = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, *itr1 );
-						if( len!=lr ){
-						  Node len_eq_lr = NodeManager::currentNM()->mkNode( kind::EQUAL, lr, len );
-						  vec_node.push_back( len_eq_lr );
+			//EqcInfo* ei = getOrMakeEqcInfo( eqc, true );
+			//get the constant for the equivalence class
+			//int c_len = ...;
+			eq::EqClassIterator eqc_i = eq::EqClassIterator( eqc, &d_equalityEngine );
+			while( !eqc_i.isFinished() ){
+			  Node n = (*eqc_i);
+
+			  //if n is concat, and
+			  //if n has not instantiatied the concat..length axiom
+			  //then, add lemma
+			  if( n.getKind() == kind::STRING_CONCAT || n.getKind() == kind::CONST_STRING ){
+				if( d_length_inst.find(n)==d_length_inst.end() ){
+					d_length_inst[n] = true;
+					Trace("strings-debug") << "get n: " << n << endl;
+					Node sk = NodeManager::currentNM()->mkSkolem( "lsym_$$", n.getType(), "created for concat lemma" );
+					Node eq = NodeManager::currentNM()->mkNode( kind::EQUAL, sk, n );
+					eq = Rewriter::rewrite(eq);
+					Trace("strings-lemma") << "Strings: Add lemma " << eq << std::endl;
+					d_out->lemma(eq);
+					Node skl = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, sk );
+					Node lsum;
+					if( n.getKind() == kind::STRING_CONCAT ){
+						//add lemma
+						std::vector<Node> node_vec;
+						for( unsigned i=0; i<n.getNumChildren(); i++ ) {
+							Node lni = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, n[i] );
+							node_vec.push_back(lni);
 						}
+						lsum = NodeManager::currentNM()->mkNode( kind::PLUS, node_vec );
+					}else{
+						//add lemma
+						lsum = NodeManager::currentNM()->mkConst( ::CVC4::Rational( n.getConst<String>().size() ) );
 					}
-					Node antc = NodeManager::currentNM()->mkNode( kind::AND, vec_node );
-					Node len = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, it->second[0] );
-					Node cons = NodeManager::currentNM()->mkNode( kind::GT, len, k_node );
-					Node lemma = NodeManager::currentNM()->mkNode( kind::IMPLIES, antc, cons );
-					Trace("strings-lemma") << "Strings cardinaliry lemma : " << lemma << std::endl;
-					d_out->lemma(lemma);
-					ei->d_cardinality_lem_k.set( k );
-					return;
+					Node ceq = NodeManager::currentNM()->mkNode( kind::EQUAL, skl, lsum );
+					ceq = Rewriter::rewrite(ceq);
+					Trace("strings-lemma") << "Strings: Add lemma " << ceq << std::endl;
+					d_out->lemma(ceq);
+					addedLemma = true;
 				}
+			  }
+			  ++eqc_i;
 			}
 		}
+		++eqcs_i;
+  }
+  if( !addedLemma ){
+	  addedLemma = checkNormalForms();
+	  if(!d_conflict && !addedLemma) {
+		  addedLemma = checkCardinality();
+		  if( !d_conflict && !addedLemma ){
+			addedLemma = checkInductiveEquations();
+		  }
 	  }
   }
-    // end -- solve the cardinality
   }
   Trace("strings-process") << "Theory of strings, done check : " << e << std::endl;
-
-  if( e == EFFORT_FULL && !addedLemma && !d_conflict ){
-	Trace("strings-ind")  << "We are sat, with these inductive equations : " << std::endl;
-	for( NodeListMap::const_iterator it = d_ind_map1.begin(); it != d_ind_map1.end(); ++it ){
-		Node x = (*it).first;
-		NodeList* lst1 = (*it).second;
-		NodeList* lst2 = (*d_ind_map2.find(x)).second;
-		NodeList* lste = (*d_ind_map_exp.find(x)).second;
-		NodeList::const_iterator i1 = lst1->begin(); 
-		NodeList::const_iterator i2 = lst2->begin(); 
-		NodeList::const_iterator ie = lste->begin(); 
-		while( i1!=lst1->end() ){
-			Node y = *i1;
-			Node z = *i2;
-			Node exp = *ie;
-			Trace("strings-ind") << "Inductive equation : " << x << " = ( " << y << "..." << z << " )* " << y << std::endl;
-			++i1;
-			++i2;
-			++ie;
-		}
-	}
-  }
 }
 
 TheoryStrings::EqcInfo::EqcInfo(  context::Context* c ) : d_const_term(c), d_length_term(c), d_cardinality_lem_k(c) {
@@ -1157,6 +978,7 @@ void TheoryStrings::addInductiveEquation( Node x, Node y, Node z, Node exp ) {
 	NodeList* lst1;
 	NodeList* lst2;
 	NodeList* lste;
+	NodeList* lstl;
 	if( itr_x_y == d_ind_map1.end() ) {
 		// add x->y
 		lst1 = new(getSatContext()->getCMM()) NodeList( true, getSatContext(), false,
@@ -1170,11 +992,16 @@ void TheoryStrings::addInductiveEquation( Node x, Node y, Node z, Node exp ) {
 		lste = new(getSatContext()->getCMM()) NodeList( true, getSatContext(), false,
 																ContextMemoryAllocator<TNode>(getSatContext()->getCMM()) );
 		d_ind_map_exp.insertDataFromContextMemory( x, lste );
+		// add x->hasLemma false
+		lstl = new(getSatContext()->getCMM()) NodeList( true, getSatContext(), false,
+																ContextMemoryAllocator<TNode>(getSatContext()->getCMM()) );
+		d_ind_map_lemma.insertDataFromContextMemory( x, lstl );
 	} else {
 		//TODO: x in (yz)*y (exp) vs  x in (y1 z1)*y1 (exp1)
 		lst1 = (*itr_x_y).second;
 		lst2 = (*d_ind_map2.find(x)).second;
 		lste = (*d_ind_map_exp.find(x)).second;
+		lstl = (*d_ind_map_lemma.find(x)).second;
 		Trace("strings-solve-debug") << "Already in maps " << x << " = (" << lst1 << " " << lst2 << ")* " << lst1 << std::endl;
 		Trace("strings-solve-debug") << "... with exp = " << lste << std::endl;
 	}
@@ -1217,6 +1044,241 @@ Node TheoryStrings::mkExplain( std::vector< Node >& a, std::vector< Node >& an )
 	}
 	return ant;
 }
+
+bool TheoryStrings::checkNormalForms() {
+	Trace("strings-process") << "Normalize equivalence classes...." << std::endl;
+  eq::EqClassesIterator eqcs2_i = eq::EqClassesIterator( &d_equalityEngine );
+  while( !eqcs2_i.isFinished() ){
+	Node eqc = (*eqcs2_i);
+	//if (eqc.getType().isString()) {
+		eq::EqClassIterator eqc2_i = eq::EqClassIterator( eqc, &d_equalityEngine );
+		Trace("strings-eqc") << "Eqc( " << eqc << " ) : ";
+		while( !eqc2_i.isFinished() ) {
+			Trace("strings-eqc") << (*eqc2_i) << " ";
+			++eqc2_i;
+		}
+		Trace("strings-eqc") << std::endl;
+	//}
+	++eqcs2_i;
+  }
+
+  bool addedFact = false;
+  do {
+	//calculate normal forms for each equivalence class, possibly adding splitting lemmas
+	d_normal_forms.clear();
+	d_normal_forms_exp.clear();
+	std::map< Node, Node > nf_to_eqc;
+	std::map< Node, Node > eqc_to_exp;
+	  eq::EqClassesIterator eqcs_i = eq::EqClassesIterator( &d_equalityEngine );
+	  d_lemma_cache.clear();
+	  while( !eqcs_i.isFinished() ){
+		Node eqc = (*eqcs_i);
+		//if eqc.getType is string
+		if (eqc.getType().isString()) {
+			Trace("strings-process") << "Verify normal forms are the same for " << eqc << std::endl;
+			std::vector< Node > visited;
+			std::vector< Node > nf;
+			std::vector< Node > nf_exp;
+			normalizeEquivalenceClass(eqc, visited, nf, nf_exp);
+			if( d_conflict ){
+				return true;
+			}else if ( d_pending.empty() && d_lemma_cache.empty() ){
+				Node nf_term;
+				if( nf.size()==0 ){
+					nf_term = d_emptyString;
+				}else if( nf.size()==1 ) {
+					nf_term = nf[0];
+				} else {
+					nf_term = NodeManager::currentNM()->mkNode( kind::STRING_CONCAT, nf );
+				}
+				nf_term = Rewriter::rewrite( nf_term );
+				Trace("strings-debug") << "Make nf_term_exp..." << std::endl;
+				Node nf_term_exp = nf_exp.empty() ? NodeManager::currentNM()->mkConst(true) :
+									nf_exp.size()==1 ? nf_exp[0] : NodeManager::currentNM()->mkNode( kind::AND, nf_exp );
+				if( nf_to_eqc.find(nf_term)!=nf_to_eqc.end() ){
+					//Trace("strings-debug") << "Merge because of normal form : " << eqc << " and " << nf_to_eqc[nf_term] << " both have normal form " << nf_term << std::endl;
+					//two equivalence classes have same normal form, merge
+					Node eq_exp = NodeManager::currentNM()->mkNode( kind::AND, nf_term_exp, eqc_to_exp[nf_to_eqc[nf_term]] );
+					Node eq = NodeManager::currentNM()->mkNode( kind::EQUAL, eqc, nf_to_eqc[nf_term] );
+					Trace("strings-lemma") << "Strings (by normal forms) : Infer " << eq << " from " << eq_exp << std::endl;
+					//d_equalityEngine.assertEquality( eq, true, eq_exp );
+					d_pending.push_back( eq );
+					d_pending_exp[eq] = eq_exp;
+					d_infer.push_back(eq);
+					d_infer_exp.push_back(eq_exp);
+				}else{
+					nf_to_eqc[nf_term] = eqc;
+					eqc_to_exp[eqc] = nf_term_exp;
+				}
+			}
+			Trace("strings-process") << "Done verifying normal forms are the same for " << eqc << std::endl;
+		}
+		++eqcs_i;
+	  }
+	  addedFact = !d_pending.empty();
+	  doPendingFacts();
+	  if( !d_conflict ){
+		  for( unsigned i=0; i<d_lemma_cache.size(); i++ ){
+			  Trace("strings-pending") << "Process pending lemma : " << d_lemma_cache[i] << std::endl;
+			  d_out->lemma( d_lemma_cache[i] );
+		  }
+		  if( !d_lemma_cache.empty() ){
+			d_lemma_cache.clear();
+			return true;
+		  }
+	  }
+  } while (!d_conflict && addedFact);
+  return false;
+}
+
+bool TheoryStrings::checkCardinality() {
+  int cardinality = options::stringCharCardinality();
+  Trace("strings-solve-debug2") << "get cardinality: " << cardinality << endl;
+
+  eq::EqClassesIterator eqcs_i = eq::EqClassesIterator( &d_equalityEngine );
+  unsigned leqc_counter = 0;
+  std::map< Node, unsigned > eqc_to_leqc;
+  std::map< unsigned, Node > leqc_to_eqc;
+  std::map< unsigned, std::vector< Node > > eqc_to_strings;
+  while( !eqcs_i.isFinished() ){
+	Node eqc = (*eqcs_i);
+	//if eqc.getType is string
+	if (eqc.getType().isString()) {
+		EqcInfo* ei = getOrMakeEqcInfo( eqc, true );
+		Node lt = ei->d_length_term;
+		if( !lt.isNull() ){
+		  lt = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, lt );
+		  Node r = d_equalityEngine.getRepresentative( lt );
+		  if( eqc_to_leqc.find( r )==eqc_to_leqc.end() ){
+			eqc_to_leqc[r] = leqc_counter;
+			leqc_to_eqc[leqc_counter] = r;
+			leqc_counter++;
+		  }
+		  eqc_to_strings[ eqc_to_leqc[r] ].push_back( eqc );
+		}else{
+		  eqc_to_strings[leqc_counter].push_back( eqc );
+		  leqc_counter++;
+		}
+	}
+	++eqcs_i;
+  }
+  for( std::map< unsigned, std::vector< Node > >::iterator it = eqc_to_strings.begin(); it != eqc_to_strings.end(); ++it ){
+	Node lr = leqc_to_eqc[it->first];
+	Trace("string-cardinality") << "Number of strings with length equal to " << lr << " is " << it->second.size() << std::endl;
+	// size > c^k
+	double k = std::log( it->second.size() ) / log((double) cardinality);
+	unsigned int int_k = (unsigned int)k;
+	Node k_node = NodeManager::currentNM()->mkConst( ::CVC4::Rational( int_k ) );
+	//double c_k = pow ( (double)cardinality, (double)lr );
+	if( it->second.size() > 1 ) {
+		bool allDisequal = true;
+		for( std::vector< Node >::iterator itr1 = it->second.begin();
+			  itr1 != it->second.end(); ++itr1) {
+			for( std::vector< Node >::iterator itr2 = itr1 + 1;
+				  itr2 != it->second.end(); ++itr2) {
+				if(!d_equalityEngine.areDisequal( *itr1, *itr2, false )) {
+					allDisequal = false;
+					// add split lemma
+					Node eq = NodeManager::currentNM()->mkNode( kind::EQUAL, *itr1, *itr2 );
+					Node neq = NodeManager::currentNM()->mkNode( kind::NOT, eq );
+					Node lemma_or = NodeManager::currentNM()->mkNode( kind::OR, eq, neq );
+					Trace("strings-lemma") << "Strings split lemma : " << lemma_or << std::endl;
+					d_out->lemma(lemma_or);
+					return true;
+				}
+			}
+		}
+		if(allDisequal) {
+			EqcInfo* ei = getOrMakeEqcInfo( lr, true );
+			Trace("string-cardinality") << "Previous cardinality used for " << lr << " is " << ei->d_cardinality_lem_k << std::endl;
+			if( int_k > ei->d_cardinality_lem_k.get() ){
+				//add cardinality lemma
+				Node dist = NodeManager::currentNM()->mkNode( kind::DISTINCT, it->second );
+				std::vector< Node > vec_node;
+				vec_node.push_back( dist );
+				for( std::vector< Node >::iterator itr1 = it->second.begin();
+					  itr1 != it->second.end(); ++itr1) {
+					Node len = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, *itr1 );
+					if( len!=lr ){
+					  Node len_eq_lr = NodeManager::currentNM()->mkNode( kind::EQUAL, lr, len );
+					  vec_node.push_back( len_eq_lr );
+					}
+				}
+				Node antc = NodeManager::currentNM()->mkNode( kind::AND, vec_node );
+				Node len = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, it->second[0] );
+				Node cons = NodeManager::currentNM()->mkNode( kind::GT, len, k_node );
+				Node lemma = NodeManager::currentNM()->mkNode( kind::IMPLIES, antc, cons );
+				Trace("strings-lemma") << "Strings cardinaliry lemma : " << lemma << std::endl;
+				d_out->lemma(lemma);
+				ei->d_cardinality_lem_k.set( k );
+				return true;
+			}
+		}
+	}
+  }
+  return false;
+}
+
+bool TheoryStrings::checkInductiveEquations() {
+	bool hasEq = false;
+	Trace("strings-ind")  << "We are sat, with these inductive equations : " << std::endl;
+	for( NodeListMap::const_iterator it = d_ind_map1.begin(); it != d_ind_map1.end(); ++it ){
+		Node x = (*it).first;
+		NodeList* lst1 = (*it).second;
+		NodeList* lst2 = (*d_ind_map2.find(x)).second;
+		NodeList* lste = (*d_ind_map_exp.find(x)).second;
+		NodeList* lstl = (*d_ind_map_lemma.find(x)).second;
+		NodeList::const_iterator i1 = lst1->begin(); 
+		NodeList::const_iterator i2 = lst2->begin(); 
+		NodeList::const_iterator ie = lste->begin(); 
+		NodeList::const_iterator il = lstl->begin(); 
+		while( i1!=lst1->end() ){
+			Node y = *i1;
+			Node z = *i2;
+			Node exp = *ie;
+			Trace("strings-ind") << "Inductive equation : " << x << " = ( " << y << "..." << z << " )* " << y << std::endl;
+			if( il==lstl->end() ) {
+				Trace("strings-ind") << "Add length lemma..." << std::endl;
+				Node lemma_len;
+				if( y.getKind()!=kind::STRING_CONCAT || z.getKind()!=kind::STRING_CONCAT ) {
+					Node len_x = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, x );
+					Node len_y = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, y );
+					lemma_len = NodeManager::currentNM()->mkNode( kind::GEQ, len_x, len_y );
+				} else {
+					// both constants
+					Node len_x = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, x );
+					Node sk = NodeManager::currentNM()->mkSkolem( "argsym_$$", NodeManager::currentNM()->integerType(), "created for length inductive lemma" );
+					Node len_y = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, y );
+					Node len_z = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, z );
+					Node len_y_plus_len_z =	NodeManager::currentNM()->mkNode( kind::PLUS, len_y, len_z );
+					Node y_p_z_t_a =	NodeManager::currentNM()->mkNode( kind::MULT, len_y_plus_len_z, sk );
+					Node y_p_z_t_a_p_y =	NodeManager::currentNM()->mkNode( kind::PLUS, y_p_z_t_a, len_y );
+					lemma_len = 	NodeManager::currentNM()->mkNode( kind::EQUAL, y_p_z_t_a_p_y, len_x );
+					Node sk_geq_zero = NodeManager::currentNM()->mkNode( kind::GEQ, sk, d_zero );
+					lemma_len = NodeManager::currentNM()->mkNode( kind::AND, lemma_len, sk_geq_zero );
+				}
+				lemma_len = 	NodeManager::currentNM()->mkNode( kind::IMPLIES, exp, lemma_len );
+				Trace("strings-lemma") << "Strings: Add lemma " << lemma_len << std::endl;
+				d_out->lemma(lemma_len);
+				lstl->push_back( d_true );
+				return true;
+			}
+
+			++i1;
+			++i2;
+			++ie;
+			++il;
+			hasEq = true;
+		}
+	}
+	if( hasEq ){
+		d_out->setIncomplete();
+	}
+  return false;
+}
+
+
+
 
 }/* CVC4::theory::strings namespace */
 }/* CVC4::theory namespace */
