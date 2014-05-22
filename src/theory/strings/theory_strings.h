@@ -271,12 +271,18 @@ protected:
   void doPendingFacts();
   void doPendingLemmas();
 
+  //register term
+  bool registerTerm(Node n);
+  //send lemma
   void sendLemma( Node ant, Node conc, const char * c );
   void sendInfer( Node eq_exp, Node eq, const char * c );
   void sendSplit( Node a, Node b, const char * c, bool preq = true );
   /** mkConcat **/
   inline Node mkConcat( Node n1, Node n2 );
-  inline Node mkConcat( std::vector< Node >& c );
+  inline Node mkConcat( const std::vector< Node >& c );
+  //mkSkolem
+  inline Node mkSkolemS(const char * c, int isLenSplit = 0);
+  //inline Node mkSkolemI(const char * c);
   /** mkExplain **/
   Node mkExplain( std::vector< Node >& a );
   Node mkExplain( std::vector< Node >& a, std::vector< Node >& an );
