@@ -463,7 +463,7 @@ void TheoryStrings::preRegisterTerm(TNode n) {
 */
 
 void TheoryStrings::preRegisterTerm(TNode n) {
-  if( registerTerm(n) ) {
+  if( d_prereg_cached.find(n) == d_prereg_cached.end() ) {
     switch( n.getKind() ) {
       case kind::EQUAL:
         d_equalityEngine.addTriggerEquality(n);
@@ -473,7 +473,8 @@ void TheoryStrings::preRegisterTerm(TNode n) {
         break;
       //case kind::STRING_SUBSTR_TOTAL:
       default: {
-        if( n.getType().isString() && n.getKind()!=kind::STRING_CONCAT && n.getKind()!=kind::CONST_STRING ) {
+        if( n.getType().isString() ) {
+          registerTerm(n);
           // FMF
           if( n.getKind() == kind::VARIABLE && options::stringFMF() ) {
             d_input_vars.insert(n);
@@ -488,6 +489,7 @@ void TheoryStrings::preRegisterTerm(TNode n) {
         }
       }
     }
+    d_prereg_cached.insert(n);
   }
 }
 
@@ -1810,18 +1812,8 @@ bool TheoryStrings::registerTerm( Node n ) {
   if(d_prereg_cached.find(n) == d_prereg_cached.end()) {
     Debug("strings-register") << "TheoryStrings::registerTerm() " << n << endl;
     //collectTerms( n );
-    switch (n.getKind()) {
-      case kind::EQUAL: {
-        //registerTerm(n[0]);
-        //registerTerm(n[1]);
-        //TODO: more
-        break;
-      }
-      case kind::STRING_IN_REGEXP: {
-        //registerTerm(n[0]);
-        break;
-      }
-      case kind::STRING_SUBSTR_TOTAL: {
+    if(n.getType().isString()) {
+      if(n.getKind() == kind::STRING_SUBSTR_TOTAL) {
         Node lenxgti = NodeManager::currentNM()->mkNode( kind::GEQ,
                   NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, n[0] ),
                   NodeManager::currentNM()->mkNode( kind::PLUS, n[1], n[2] ) );
@@ -1839,52 +1831,50 @@ bool TheoryStrings::registerTerm( Node n ) {
         Trace("strings-lemma") << "Strings::Lemma SUBSTR : " << lemma << std::endl;
         d_out->lemma(lemma);
       }
-      default: {
-        if( n.getType().isString() ) {
-          if( n.getKind()!=kind::STRING_CONCAT && n.getKind()!=kind::CONST_STRING ) {
-            if( d_length_intro_vars.find(n)==d_length_intro_vars.end() ) {
-              Node n_len = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, n);
-              Node n_len_eq_z = n_len.eqNode( d_zero );
-              n_len_eq_z = Rewriter::rewrite( n_len_eq_z );
-              Node n_len_geq_zero = NodeManager::currentNM()->mkNode( kind::OR, n_len_eq_z,
-                          NodeManager::currentNM()->mkNode( kind::GT, n_len, d_zero) );
-              Trace("strings-lemma") << "Strings::Lemma LENGTH >= 0 : " << n_len_geq_zero << std::endl;
-              ++(d_statistics.d_splits);
-              d_out->lemma(n_len_geq_zero);
-              d_out->requirePhase( n_len_eq_z, true );
-              d_length_intro_vars.insert(n);
+      if( n.getKind()!=kind::STRING_CONCAT && n.getKind()!=kind::CONST_STRING ) {
+        if( d_length_intro_vars.find(n)==d_length_intro_vars.end() ) {
+          Node n_len = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, n);
+          Node n_len_eq_z = n_len.eqNode( d_zero );
+          n_len_eq_z = Rewriter::rewrite( n_len_eq_z );
+          Node n_len_geq_zero = NodeManager::currentNM()->mkNode( kind::OR, n_len_eq_z,
+                      NodeManager::currentNM()->mkNode( kind::GT, n_len, d_zero) );
+          Trace("strings-lemma") << "Strings::Lemma LENGTH >= 0 : " << n_len_geq_zero << std::endl;
+          ++(d_statistics.d_splits);
+          d_out->lemma(n_len_geq_zero);
+          d_out->requirePhase( n_len_eq_z, true );
+          d_length_intro_vars.insert(n);
+        }
+      } else {
+        if( d_length_nodes.find(n)==d_length_nodes.end() ) {
+          Node sk = mkSkolemS("lsym", 2);
+          Node eq = Rewriter::rewrite( sk.eqNode(n) );
+          Trace("strings-lemma") << "Strings::Lemma LENGTH Term : " << eq << std::endl;
+          d_out->lemma(eq);
+          Node skl = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, sk );
+          Node lsum;
+          if( n.getKind() == kind::STRING_CONCAT ) {
+            std::vector<Node> node_vec;
+            for( unsigned i=0; i<n.getNumChildren(); i++ ) {
+              Node lni = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, n[i] );
+              node_vec.push_back(lni);
             }
-          } else {
-            if( d_length_nodes.find(n)==d_length_nodes.end() ) {
-              Node sk = mkSkolemS("lsym", 2);
-              Node eq = Rewriter::rewrite( sk.eqNode(n) );
-              Trace("strings-lemma") << "Strings::Lemma LENGTH Term : " << eq << std::endl;
-              d_out->lemma(eq);
-              Node skl = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, sk );
-              Node lsum;
-              if( n.getKind() == kind::STRING_CONCAT ) {
-                std::vector<Node> node_vec;
-                for( unsigned i=0; i<n.getNumChildren(); i++ ) {
-                  Node lni = NodeManager::currentNM()->mkNode( kind::STRING_LENGTH, n[i] );
-                  node_vec.push_back(lni);
-                }
-                lsum = NodeManager::currentNM()->mkNode( kind::PLUS, node_vec );
-              } else if( n.getKind() == kind::CONST_STRING ) {
-                lsum = NodeManager::currentNM()->mkConst( ::CVC4::Rational( n.getConst<String>().size() ) );
-              }
-              Node ceq = Rewriter::rewrite( skl.eqNode( lsum ) );
-              Trace("strings-lemma") << "Strings::Lemma LENGTH : " << ceq << std::endl;
-              d_out->lemma(ceq);
-            }
+            lsum = NodeManager::currentNM()->mkNode( kind::PLUS, node_vec );
+          } else if( n.getKind() == kind::CONST_STRING ) {
+            lsum = NodeManager::currentNM()->mkConst( ::CVC4::Rational( n.getConst<String>().size() ) );
           }
+          Node ceq = Rewriter::rewrite( skl.eqNode( lsum ) );
+          Trace("strings-lemma") << "Strings::Lemma LENGTH : " << ceq << std::endl;
+          d_out->lemma(ceq);
         }
       }
+      d_prereg_cached.insert(n);
+      return true;
+    } else {
+      //case kind::STRING_IN_REGEXP:
+      AlwaysAssert(false, "String Terms only in registerTerm.");
     }
-    d_prereg_cached.insert(n);
-    return true;
-  } else {
-    return false;
   }
+  return false;
 }
 
 void TheoryStrings::sendLemma( Node ant, Node conc, const char * c ) {
@@ -3060,6 +3050,7 @@ bool TheoryStrings::deriveRegExp( Node x, Node r, Node ant ) {
       CVC4::String c = s.substr(i, 1);
       Node dc2;
       int rt = d_regexp_opr.derivativeS(dc, c, dc2);
+      dc = dc2;
       if(rt == 0) {
         //TODO
       } else if(rt == 2) {
@@ -3083,13 +3074,13 @@ bool TheoryStrings::deriveRegExp( Node x, Node r, Node ant ) {
         left = Rewriter::rewrite( left );
         conc = NodeManager::currentNM()->mkNode( kind::STRING_IN_REGEXP, left, dc );
 
-        std::vector< Node > sdc;
+        /*std::vector< Node > sdc;
         d_regexp_opr.simplify(conc, sdc, true);
         if(sdc.size() == 1) {
           conc = sdc[0];
         } else {
           conc = Rewriter::rewrite(NodeManager::currentNM()->mkNode(kind::AND, conc));
-        }
+        }*/
       }
     }
     sendLemma(ant, conc, "RegExp-Derive");
